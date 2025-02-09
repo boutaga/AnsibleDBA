@@ -1,4 +1,4 @@
-## Ansible playbook 
+## PMM playbooks
 
 ```
 ansible/
