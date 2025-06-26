@@ -1,17 +1,17 @@
 # SLA Onboarding Scripts
 
-This folder contains scripts used to collect onboarding information for database servers. The `onboard_review.sh` script gathers server and database metadata for PostgreSQL, MariaDB and MySQL instances. The output format and destination can be chosen via the command line. Supported formats are:
+This folder contains scripts used to collect onboarding information for database servers.
 
-- **Text** (`.txt`)
-- **CSV** (`.csv`)
-- **JSON** (`.json`)
+`main_cli.sh` is a small wrapper that lets you run checks for PostgreSQL, MySQL, MariaDB or general OS information. Each database engine has its own helper script with functions that report version, data directory, memory settings and database sizes. For MySQL and MariaDB the running configuration and InnoDB status are also displayed.
 
-Run the script with optional flags:
+The original `onboard_review.sh` script is still provided for generating TXT/CSV/JSON reports but now you can also run more targeted checks:
 
 ```bash
-./onboard_review.sh            # default text output in the current directory
-./onboard_review.sh -f csv     # CSV output
-./onboard_review.sh -f all -o /tmp  # all formats in /tmp
+./main_cli.sh --postgres      # PostgreSQL checks
+./main_cli.sh --mysql         # MySQL checks
+./main_cli.sh --mariadb       # MariaDB checks
+./main_cli.sh --os            # OS summary
+./main_cli.sh --all           # run everything
 ```
 
-You may also provide custom paths for binaries and configuration files using `--psql`, `--mysql`, `--mariadb`, `--pgconf`, `--mysqlconf`, and `--mariadbconf`.
+For `onboard_review.sh`, you may specify output formats and custom binary paths using the existing flags (`--psql`, `--mysql`, `--mariadb`, ...).
