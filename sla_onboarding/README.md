@@ -15,3 +15,13 @@ The original `onboard_review.sh` script is still provided for generating TXT/CSV
 ```
 
 For `onboard_review.sh`, you may specify output formats and custom binary paths using the existing flags (`--psql`, `--mysql`, `--mariadb`, ...).
+
+Use the unified `main_cli.sh`:
+
+```bash
+./main_cli.sh --os
+./main_cli.sh --postgres
+./main_cli.sh --mysql
+./main_cli.sh --mariadb
+./main_cli.sh --all
+```
