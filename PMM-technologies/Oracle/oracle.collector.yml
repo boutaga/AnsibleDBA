@@ -1,0 +1,236 @@
+# Oracle Database Prometheus Scraping Configuration
+# This file contains Prometheus scraping job configuration for Oracle Database monitoring
+
+# Main Oracle Database scraping job
+scrape_configs:
+  - job_name: 'oracle_database'
+    static_configs:
+      - targets: ['localhost:9161']
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    metrics_path: /metrics
+    scheme: http
+    
+    # Custom labels for Oracle instances
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: localhost:9161
+    
+    # Metric relabeling for Oracle-specific metrics
+    metric_relabel_configs:
+      # Add database type label
+      - source_labels: [__name__]
+        regex: 'oracledb_.*'
+        target_label: db_type
+        replacement: 'oracle'
+      
+      # Normalize metric names
+      - source_labels: [__name__]
+        regex: 'oracledb_(.+)'
+        target_label: __name__
+        replacement: 'oracle_${1}'
+
+# Separate job for high-frequency Oracle metrics
+  - job_name: 'oracle_database_high_freq'
+    static_configs:
+      - targets: ['localhost:9161']
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    metrics_path: /metrics
+    scheme: http
+    
+    # Only scrape specific high-frequency metrics
+    params:
+      collect[]:
+        - oracle_sessions_detailed
+        - oracle_instance_detailed
+        - oracle_memory_usage
+    
+    metric_relabel_configs:
+      # Add frequency label
+      - source_labels: [__name__]
+        target_label: scrape_frequency
+        replacement: 'high'
+
+# Job configuration for Oracle DataGuard monitoring
+  - job_name: 'oracle_dataguard'
+    static_configs:
+      - targets: ['localhost:9161']
+    scrape_interval: 60s
+    scrape_timeout: 15s
+    metrics_path: /metrics
+    scheme: http
+    
+    # Only scrape DataGuard related metrics
+    params:
+      collect[]:
+        - oracle_dataguard_status
+    
+    # Add DataGuard specific labels
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'oracle_dataguard_.*'
+        target_label: oracle_feature
+        replacement: 'dataguard'
+
+# Job configuration for Oracle RMAN backup monitoring
+  - job_name: 'oracle_rman_backup'
+    static_configs:
+      - targets: ['localhost:9161']
+    scrape_interval: 300s  # 5 minutes
+    scrape_timeout: 30s
+    metrics_path: /metrics
+    scheme: http
+    
+    # Only scrape RMAN backup metrics
+    params:
+      collect[]:
+        - oracle_rman_backup_status
+    
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'oracle_rman_.*'
+        target_label: oracle_feature
+        replacement: 'rman'
+
+# Job configuration for Oracle ASM monitoring
+  - job_name: 'oracle_asm'
+    static_configs:
+      - targets: ['localhost:9161']
+    scrape_interval: 120s
+    scrape_timeout: 20s
+    metrics_path: /metrics
+    scheme: http
+    
+    # Only scrape ASM related metrics
+    params:
+      collect[]:
+        - oracle_asm_diskgroup_space
+    
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'oracle_asm_.*'
+        target_label: oracle_feature
+        replacement: 'asm'
+
+# Alternative single job configuration (simpler setup)
+# Use this if you prefer one job for all Oracle metrics
+# 
+# scrape_configs:
+#   - job_name: 'oracle_complete'
+#     static_configs:
+#       - targets: ['oracle-server-1:9161', 'oracle-server-2:9161']
+#     scrape_interval: 60s
+#     scrape_timeout: 30s
+#     metrics_path: /metrics
+#     scheme: http
+#     
+#     # Add common labels
+#     labels:
+#       database_type: 'oracle'
+#       environment: 'production'  # Change as appropriate
+#     
+#     # Honor labels from the exporter
+#     honor_labels: true
+#     
+#     metric_relabel_configs:
+#       # Drop metrics you don't need (example)
+#       - source_labels: [__name__]
+#         regex: 'oracle_top_sql_.*'
+#         action: drop
+#       
+#       # Add custom labels based on metric content
+#       - source_labels: [con_id]
+#         regex: '1'
+#         target_label: container_type
+#         replacement: 'cdb'
+#       - source_labels: [con_id]
+#         regex: '[2-9]|[1-9][0-9]+'
+#         target_label: container_type
+#         replacement: 'pdb'
+
+# Recording rules for Oracle metrics (add to prometheus.yml under rule_files)
+# groups:
+#   - name: oracle_database.rules
+#     interval: 60s
+#     rules:
+#       # Calculate overall database health score
+#       - record: oracle:database_health_score
+#         expr: |
+#           (
+#             oracle_instance_detailed_up * 40 +
+#             (100 - oracle_cdb_tablespace_usage_used_percent) / 100 * 30 +
+#             (oracle_asm_diskgroup_space_usable_gb > 100) * 20 +
+#             (oracle_dataguard_status_lag_seconds < 300) * 10
+#           ) / 100
+#       
+#       # Alert on high tablespace usage
+#       - record: oracle:tablespace_usage_high
+#         expr: oracle_cdb_tablespace_usage_used_percent > 85
+#       
+#       # Calculate backup freshness
+#       - record: oracle:backup_age_hours
+#         expr: (time() - oracle_rman_backup_status_start_time_epoch) / 3600
+#       
+#       # ASM diskgroup usage percentage
+#       - record: oracle:asm_usage_percent
+#         expr: |
+#           (
+#             (oracle_asm_diskgroup_total - oracle_asm_diskgroup_free) / 
+#             oracle_asm_diskgroup_total
+#           ) * 100
+
+# Alerting rules examples (add to your alerting rules file)
+# groups:
+#   - name: oracle_alerts
+#     rules:
+#       - alert: OracleInstanceDown
+#         expr: oracle_instance_detailed_up == 0
+#         for: 1m
+#         labels:
+#           severity: critical
+#         annotations:
+#           summary: "Oracle instance is down"
+#           description: "Oracle instance {{ $labels.instance_name }} is not responding"
+#       
+#       - alert: OracleTablespaceUsageHigh
+#         expr: oracle_cdb_tablespace_usage_used_percent > 90
+#         for: 5m
+#         labels:
+#           severity: warning
+#         annotations:
+#           summary: "High tablespace usage"
+#           description: "Tablespace {{ $labels.tablespace_name }} usage is {{ $value }}%"
+#       
+#       - alert: OracleDataGuardLagHigh
+#         expr: oracle_dataguard_status_lag_seconds > 3600
+#         for: 10m
+#         labels:
+#           severity: warning
+#         annotations:
+#           summary: "DataGuard lag is high"
+#           description: "DataGuard {{ $labels.name }} lag is {{ $value }} seconds"
+#       
+#       - alert: OracleBackupFailed
+#         expr: |
+#           oracle_rman_backup_status{status!="COMPLETED"} and 
+#           (time() - oracle_rman_backup_status_start_time_epoch) < 86400
+#         for: 0m
+#         labels:
+#           severity: critical
+#         annotations:
+#           summary: "Oracle backup failed"
+#           description: "RMAN backup {{ $labels.input_type }} failed with status {{ $labels.status }}"
+#       
+#       - alert: OracleFRAUsageHigh
+#         expr: oracle_fra_usage_real_usage_percent > 85
+#         for: 5m
+#         labels:
+#           severity: warning
+#         annotations:
+#           summary: "Flash Recovery Area usage high"
+#           description: "FRA usage is {{ $value }}%"

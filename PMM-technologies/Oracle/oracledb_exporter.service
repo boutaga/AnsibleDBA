@@ -1,0 +1,43 @@
+[Unit]
+Description=Prometheus Oracle DB Exporter
+Documentation=https://github.com/oracle/oracle-db-appdev-monitoring
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sql_exporter
+Group=sql_exporter
+Restart=on-failure
+RestartSec=10
+
+# Oracle connection string format: oracle://username:password@host:port/service_name
+Environment="DATA_SOURCE_NAME=oracle://C##PMM:pmmuser@127.0.0.1:1521/ORCLCDB"
+
+# Oracle Instant Client library path (uncomment if using OCI client)
+# Environment="LD_LIBRARY_PATH=/usr/lib/oracle/21/client64/lib"
+
+# Additional Oracle environment variables (if needed)
+# Environment="ORACLE_HOME=/usr/lib/oracle/21/client64"
+# Environment="TNS_ADMIN=/usr/lib/oracle/21/client64/network/admin"
+
+# Exporter configuration
+ExecStart=/usr/local/bin/oracledb_exporter \
+  --web.listen-address=":9161" \
+  --custom.metrics="/etc/oracledb_exporter/custom-metrics.toml" \
+  --default.metrics=true \
+  --log.level="info"
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/tmp
+
+# Process limits
+LimitNOFILE=65536
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

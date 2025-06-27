@@ -1,0 +1,273 @@
+# Oracle Database Custom Metrics for PMM/Prometheus
+# Based on oracledb_exporter format for Oracle-specific monitoring requirements
+
+# ===========================
+# CUSTOM ORACLE METRICS
+# ===========================
+
+# 1. DataGuard Status Monitoring
+[[metric]]
+context = "oracle_dataguard_status"
+labels = ["name"]
+metrics = [
+    { name = "lag_seconds", help = "DataGuard lag in seconds", kind = "gauge" }
+]
+request = """
+SELECT 
+    name,
+    CASE 
+        WHEN name LIKE '%transport lag%' THEN 
+            EXTRACT(DAY FROM value) * 86400 + 
+            EXTRACT(HOUR FROM value) * 3600 + 
+            EXTRACT(MINUTE FROM value) * 60 + 
+            EXTRACT(SECOND FROM value)
+        WHEN name LIKE '%apply lag%' THEN 
+            EXTRACT(DAY FROM value) * 86400 + 
+            EXTRACT(HOUR FROM value) * 3600 + 
+            EXTRACT(MINUTE FROM value) * 60 + 
+            EXTRACT(SECOND FROM value)
+        ELSE 0
+    END AS lag_seconds
+FROM v$dataguard_stats 
+WHERE name LIKE '%lag%'
+"""
+
+# 2. CDB Tablespace Usage (Multi-tenant specific)
+[[metric]]
+context = "oracle_cdb_tablespace_usage"
+labels = ["tablespace_name", "con_id"]
+metrics = [
+    { name = "size_mb", help = "Tablespace size in MB", kind = "gauge" },
+    { name = "max_size_mb", help = "Tablespace maximum size in MB", kind = "gauge" },
+    { name = "usage_mb", help = "Tablespace usage in MB", kind = "gauge" },
+    { name = "used_percent", help = "Tablespace usage percentage", kind = "gauge" }
+]
+request = """
+SELECT
+    a.TABLESPACE_NAME as tablespace_name,
+    nvl(round(sum(b.bytes)/1024/1024),0) as size_mb,
+    nvl(round(sum(b.maxbytes)/1024/1024),0) as max_size_mb,
+    nvl(round(sum(b.bytes)/1024/1024),0)-nvl(round(sum(c.free_bytes)/1024/1024),0) as usage_mb,
+    round((nvl(round(sum(b.bytes)/1024/1024),0)-nvl(round(sum(c.free_bytes)/1024/1024),0))/nvl(round(sum(b.bytes)/1024/1024),0)*1000)/10 as used_percent,
+    a.CON_ID as con_id
+FROM CDB_TABLESPACES a,
+(
+    SELECT TABLESPACE_NAME, CON_ID,
+        sum(BYTES) bytes,
+        count(*) count_files,
+        sum(greatest(MAXBYTES,BYTES)) maxbytes
+    FROM CDB_DATA_FILES
+    GROUP BY TABLESPACE_NAME,CON_ID
+    UNION ALL
+    SELECT TABLESPACE_NAME, CON_ID,
+        sum(BYTES),
+        count(*),
+        sum(greatest(MAXBYTES,BYTES)) maxbytes
+    FROM CDB_TEMP_FILES
+    GROUP BY TABLESPACE_NAME,CON_ID
+) b,
+(
+    SELECT TABLESPACE_NAME, CON_ID,
+        sum(BYTES) free_bytes
+    FROM CDB_FREE_SPACE
+    GROUP BY TABLESPACE_NAME,CON_ID
+    UNION ALL
+    SELECT TABLESPACE_NAME, CON_ID,
+        sum(BYTES_FREE) free_bytes
+    FROM V$TEMP_SPACE_HEADER
+    GROUP BY TABLESPACE_NAME,CON_ID
+) c
+WHERE a.TABLESPACE_NAME = b.TABLESPACE_NAME (+)
+  AND a.CON_ID = b.CON_ID (+)
+  AND a.TABLESPACE_NAME = c.TABLESPACE_NAME (+)
+  AND a.CON_ID = c.CON_ID (+)
+HAVING round((nvl(round(sum(b.bytes)/1024/1024),0)-nvl(round(sum(c.free_bytes)/1024/1024),0))/nvl(round(sum(b.bytes)/1024/1024),0)*1000)/10 > 0
+GROUP BY
+    a.TABLESPACE_NAME,
+    a.CONTENTS,
+    a.EXTENT_MANAGEMENT,
+    a.ALLOCATION_TYPE,
+    a.SEGMENT_SPACE_MANAGEMENT,
+    a.BIGFILE,
+    a.STATUS,
+    a.CON_ID
+ORDER BY a.CON_ID,a.TABLESPACE_NAME
+"""
+
+# 3. RMAN Backup Status (Last 7 days)
+[[metric]]
+context = "oracle_rman_backup_status"
+labels = ["input_type", "status"]
+metrics = [
+    { name = "source_mb", help = "Backup source size in MB", kind = "gauge" },
+    { name = "backup_mb", help = "Backup output size in MB", kind = "gauge" },
+    { name = "duration_minutes", help = "Backup duration in minutes", kind = "gauge" },
+    { name = "start_time_epoch", help = "Backup start time as epoch", kind = "gauge" }
+]
+request = """
+SELECT 
+    input_type,
+    status,
+    round(input_bytes/1024/1024) as source_mb,
+    round(output_bytes/1024/1024) as backup_mb,
+    round(elapsed_seconds/60,1) as duration_minutes,
+    EXTRACT(EPOCH FROM start_time) as start_time_epoch
+FROM v$rman_backup_job_details 
+WHERE start_time >= SYSDATE-7 
+ORDER BY start_time DESC
+"""
+
+# 4. Flash Recovery Area (FRA) Usage - Real Usage excluding reclaimable
+[[metric]]
+context = "oracle_fra_usage"
+labels = []
+metrics = [
+    { name = "real_usage_percent", help = "Real FRA usage percentage (excluding reclaimable)", kind = "gauge" }
+]
+request = """
+SELECT sum(PERCENT_SPACE_USED-PERCENT_SPACE_RECLAIMABLE) as real_usage_percent 
+FROM v$flash_recovery_area_usage
+"""
+
+# 5. ASM Diskgroup Space (ODA specific)
+[[metric]]
+context = "oracle_asm_diskgroup_space"
+labels = ["diskgroup_name"]
+metrics = [
+    { name = "usable_gb", help = "ASM Diskgroup usable space in GB", kind = "gauge" }
+]
+request = """
+SELECT 
+    a.name as diskgroup_name,
+    round(a.usable_file_mb/1024) as usable_gb
+FROM v$asm_diskgroup a
+"""
+
+# ===========================
+# ENHANCED STANDARD METRICS
+# ===========================
+
+# Instance Status with detailed information
+[[metric]]
+context = "oracle_instance_detailed"
+labels = ["instance_name", "host_name", "version"]
+metrics = [
+    { name = "up", help = "Oracle instance status (1=up)", kind = "gauge" },
+    { name = "startup_time_epoch", help = "Instance startup time as epoch", kind = "gauge" }
+]
+request = """
+SELECT 
+    instance_name,
+    host_name,
+    version,
+    1 as up,
+    EXTRACT(EPOCH FROM startup_time) as startup_time_epoch
+FROM v$instance
+"""
+
+# Active Sessions by Status and Type
+[[metric]]
+context = "oracle_sessions_detailed"
+labels = ["status", "type", "machine"]
+metrics = [
+    { name = "count", help = "Number of sessions by status, type and machine", kind = "gauge" }
+]
+request = """
+SELECT 
+    status,
+    type,
+    SUBSTR(machine, 1, 30) as machine,
+    COUNT(*) as count
+FROM v$session 
+WHERE status = 'ACTIVE'
+GROUP BY status, type, SUBSTR(machine, 1, 30)
+"""
+
+# Long Running Operations
+[[metric]]
+context = "oracle_long_operations"
+labels = ["opname", "target", "username"]
+metrics = [
+    { name = "time_remaining_sec", help = "Estimated time remaining in seconds", kind = "gauge" },
+    { name = "elapsed_seconds", help = "Elapsed time in seconds", kind = "gauge" },
+    { name = "percent_complete", help = "Percentage completed", kind = "gauge" }
+]
+request = """
+SELECT 
+    opname,
+    target,
+    username,
+    time_remaining as time_remaining_sec,
+    elapsed_seconds,
+    ROUND(sofar/totalwork*100, 2) as percent_complete
+FROM v$session_longops 
+WHERE time_remaining > 0
+  AND totalwork > 0
+"""
+
+# Database Size and Growth
+[[metric]]
+context = "oracle_database_size"
+labels = ["file_type"]
+metrics = [
+    { name = "total_gb", help = "Total database size by file type in GB", kind = "gauge" }
+]
+request = """
+SELECT 'DATAFILE' as file_type, SUM(bytes)/1024/1024/1024 as total_gb FROM dba_data_files
+UNION ALL
+SELECT 'TEMPFILE' as file_type, SUM(bytes)/1024/1024/1024 as total_gb FROM dba_temp_files
+UNION ALL
+SELECT 'LOGFILE' as file_type, SUM(bytes)/1024/1024/1024 as total_gb FROM v$log
+"""
+
+# Critical Alert Log Errors (Last 24 hours)
+[[metric]]
+context = "oracle_alert_log_errors"
+labels = ["error_type"]
+metrics = [
+    { name = "count_24h", help = "Count of alert log errors in last 24 hours", kind = "gauge" }
+]
+request = """
+SELECT 
+    CASE 
+        WHEN message_text LIKE '%ORA-00600%' THEN 'ORA-600'
+        WHEN message_text LIKE '%ORA-07445%' THEN 'ORA-7445'
+        WHEN message_text LIKE '%ORA-01555%' THEN 'ORA-1555'
+        WHEN message_text LIKE '%deadlock%' THEN 'DEADLOCK'
+        WHEN message_text LIKE '%checkpoint%' THEN 'CHECKPOINT'
+        ELSE 'OTHER'
+    END as error_type,
+    COUNT(*) as count_24h
+FROM v$diag_alert_ext 
+WHERE originating_timestamp >= SYSTIMESTAMP - INTERVAL '24' HOUR
+  AND message_level = 1  -- Error level
+GROUP BY 
+    CASE 
+        WHEN message_text LIKE '%ORA-00600%' THEN 'ORA-600'
+        WHEN message_text LIKE '%ORA-07445%' THEN 'ORA-7445'
+        WHEN message_text LIKE '%ORA-01555%' THEN 'ORA-1555'
+        WHEN message_text LIKE '%deadlock%' THEN 'DEADLOCK'
+        WHEN message_text LIKE '%checkpoint%' THEN 'CHECKPOINT'
+        ELSE 'OTHER'
+    END
+"""
+
+# PGA and SGA Memory Usage
+[[metric]]
+context = "oracle_memory_usage"
+labels = ["memory_type"]
+metrics = [
+    { name = "bytes", help = "Memory usage in bytes", kind = "gauge" }
+]
+request = """
+SELECT 'SGA' as memory_type, SUM(value) as bytes
+FROM v$sga
+UNION ALL
+SELECT 'PGA_AGGREGATE' as memory_type, value as bytes
+FROM v$pgastat 
+WHERE name = 'aggregate PGA target parameter'
+UNION ALL
+SELECT 'PGA_ALLOCATED' as memory_type, value as bytes
+FROM v$pgastat 
+WHERE name = 'total PGA allocated'
+"""
