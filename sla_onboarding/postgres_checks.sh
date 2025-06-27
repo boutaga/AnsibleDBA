@@ -1,14 +1,45 @@
 #!/bin/bash
 # PostgreSQL specific checks derived from pg_dbaOverview.sh
 
-PG_BASE_DIRS=("/u02/pgdata" "/var/lib/postgresql")
-
+# Dynamic discovery of PostgreSQL installations
 pg_find_clusters() {
   local confs=()
-  for d in "${PG_BASE_DIRS[@]}"; do
+  
+  # Method 1: Find running PostgreSQL processes and their data directories
+  if command -v ps >/dev/null 2>&1; then
+    local running_datadirs=$(ps aux | grep -E 'postgres.*-D' | grep -v grep | sed -n 's/.*-D \([^ ]*\).*/\1/p' | sort -u)
+    for datadir in $running_datadirs; do
+      [ -f "$datadir/postgresql.conf" ] && confs+=("$datadir/postgresql.conf")
+    done
+  fi
+  
+  # Method 2: Check systemd service files for custom paths
+  if command -v systemctl >/dev/null 2>&1; then
+    local services=$(systemctl list-units --type=service | grep postgres | awk '{print $1}')
+    for service in $services; do
+      local datadir=$(systemctl show "$service" -p Environment | grep -o 'PGDATA=[^[:space:]]*' | cut -d= -f2)
+      [ -n "$datadir" ] && [ -f "$datadir/postgresql.conf" ] && confs+=("$datadir/postgresql.conf")
+    done
+  fi
+  
+  # Method 3: Standard locations as fallback
+  local standard_dirs=("/var/lib/postgresql" "/usr/local/pgsql" "/opt/postgresql" "/u01/pgdata" "/u02/pgdata")
+  for d in "${standard_dirs[@]}"; do
     [ -d "$d" ] && confs+=( $(find "$d" -type f -name postgresql.conf 2>/dev/null) )
   done
-  printf '%s\n' "${confs[@]}"
+  
+  # Method 4: Check common PostgreSQL binary locations and ask them
+  local pg_binaries=("/usr/bin/postgres" "/usr/local/bin/postgres" "/opt/postgresql/bin/postgres" "/u01/app/postgresql/bin/postgres")
+  for binary in "${pg_binaries[@]}"; do
+    if [ -x "$binary" ]; then
+      # Try to get default data directory from binary
+      local default_datadir=$("$binary" --help 2>/dev/null | grep -E 'default.*data.*directory' | sed -n 's/.*default.*data.*directory.*\([^[:space:]]*\).*/\1/p')
+      [ -n "$default_datadir" ] && [ -f "$default_datadir/postgresql.conf" ] && confs+=("$default_datadir/postgresql.conf")
+    fi
+  done
+  
+  # Remove duplicates and print
+  printf '%s\n' "${confs[@]}" | sort -u
 }
 
 pg_is_cluster_running() {
@@ -18,11 +49,78 @@ pg_is_cluster_running() {
 
 pg_get_port() {
   local dir="$1"
+  local port=""
+  
+  # First try to get port from running instance
   if [ -f "$dir/postmaster.pid" ]; then
-    sed -n '4p' "$dir/postmaster.pid" | xargs
-  else
-    grep -E '^port' "$dir/postgresql.conf" 2>/dev/null | awk -F= '{print $2}' | awk '{print $1}' | head -n1
+    port=$(sed -n '4p' "$dir/postmaster.pid" 2>/dev/null | xargs)
   fi
+  
+  # Fallback to config file
+  if [ -z "$port" ] || [ "$port" = "" ]; then
+    port=$(grep -E '^port' "$dir/postgresql.conf" 2>/dev/null | awk -F= '{print $2}' | awk '{print $1}' | head -n1)
+  fi
+  
+  # Default fallback
+  echo "${port:-5432}"
+}
+
+pg_get_runtime_paths() {
+  local port="$1"
+  local paths=""
+  
+  # Try to connect and get actual runtime paths
+  if command -v psql >/dev/null; then
+    # Try as current user first, then as postgres user
+    local conn_string="host=localhost port=$port dbname=postgres"
+    
+    paths=$(psql "$conn_string" -t -c "
+      SELECT 
+        'data_directory: ' || setting FROM pg_settings WHERE name = 'data_directory'
+      UNION ALL
+      SELECT 
+        'config_file: ' || setting FROM pg_settings WHERE name = 'config_file'
+      UNION ALL
+      SELECT 
+        'hba_file: ' || setting FROM pg_settings WHERE name = 'hba_file'
+      UNION ALL
+      SELECT 
+        'ident_file: ' || setting FROM pg_settings WHERE name = 'ident_file'
+      UNION ALL
+      SELECT 
+        'log_directory: ' || setting FROM pg_settings WHERE name = 'log_directory'
+      UNION ALL
+      SELECT 
+        'log_filename: ' || setting FROM pg_settings WHERE name = 'log_filename'
+      UNION ALL
+      SELECT 
+        'archive_command: ' || setting FROM pg_settings WHERE name = 'archive_command'
+    " 2>/dev/null || \
+    sudo -u postgres psql "$conn_string" -t -c "
+      SELECT 
+        'data_directory: ' || setting FROM pg_settings WHERE name = 'data_directory'
+      UNION ALL
+      SELECT 
+        'config_file: ' || setting FROM pg_settings WHERE name = 'config_file'
+      UNION ALL
+      SELECT 
+        'hba_file: ' || setting FROM pg_settings WHERE name = 'hba_file'
+      UNION ALL
+      SELECT 
+        'ident_file: ' || setting FROM pg_settings WHERE name = 'ident_file'
+      UNION ALL
+      SELECT 
+        'log_directory: ' || setting FROM pg_settings WHERE name = 'log_directory'
+      UNION ALL
+      SELECT 
+        'log_filename: ' || setting FROM pg_settings WHERE name = 'log_filename'
+      UNION ALL
+      SELECT 
+        'archive_command: ' || setting FROM pg_settings WHERE name = 'archive_command'
+    " 2>/dev/null)
+  fi
+  
+  echo "$paths"
 }
 
 pg_extract_version() {
@@ -45,6 +143,12 @@ pg_summary() {
     local port=$(pg_get_port "$dir")
     local version=$(pg_extract_version "$dir")
     echo "$name | version:$version | port:$port | status:$status"
+    
+    # Get runtime paths if instance is running
+    if [ "$status" = "online" ]; then
+      echo "Runtime Paths:"
+      pg_get_runtime_paths "$port" | sed 's/^/  /'
+    fi
   done
 }
 

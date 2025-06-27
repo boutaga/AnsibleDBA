@@ -106,6 +106,7 @@ if $run_postgres; then
 fi
 if $run_mysql; then
   mysql_summary
+  mysql_get_paths
   mysql_users_security
   mysql_replication
   mysql_config_files
@@ -117,6 +118,7 @@ if $run_mysql; then
 fi
 if $run_mariadb; then
   mariadb_summary
+  mariadb_get_paths
   mariadb_cluster_status
   mariadb_plugins
   mariadb_config_files
