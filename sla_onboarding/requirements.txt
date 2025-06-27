@@ -1,0 +1,14 @@
+# Python dependencies for AnsibleDBA CIS compliance checks
+# Install with: pip install -r requirements.txt
+
+# PostgreSQL CIS compliance
+psycopg[binary]>=3.0.0
+
+# MySQL/MariaDB CIS compliance  
+mysql-connector-python>=8.0.0
+
+# Alternative MySQL library (uncomment if preferred over mysql-connector-python)
+# PyMySQL>=1.0.0
+
+# General utilities
+configparser>=5.0.0

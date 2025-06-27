@@ -1,0 +1,17 @@
+collector_name: mssql_server_info
+min_interval: 6h
+ 
+metrics:
+  - metric_name: mssql_server_info
+    type: gauge
+    help: 'SQL Server machine and instance name for dashboard filtering'
+    key_labels:
+      - machine
+      - instance
+    values:
+      - instancename   # any column name works since value is static
+    query: |
+      SELECT
+        SERVERPROPERTY('MachineName')   AS machine,
+        COALESCE(SERVERPROPERTY('InstanceName'), '') AS instance,
+        1                                 AS instancename

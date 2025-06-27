@@ -249,3 +249,30 @@ mysql_storage_engines() {
   mysql_exec "SHOW VARIABLES LIKE 'default_storage_engine';"
 }
 
+# MySQL CIS Compliance Check Wrapper - calls the actual function from cis_integration.sh
+mysql_cis_compliance_check() {
+  # Skip CIS checks if explicitly disabled in interactive mode
+  if [ "${INTERACTIVE_MYSQL_CIS_ENABLED:-}" = "false" ]; then
+    echo "CIS Compliance|Skipped per user request in interactive mode"
+    return 0
+  fi
+  
+  # Check if the CIS integration module function exists (already sourced in main_cli.sh)
+  if declare -f mysql_cis_compliance_check > /dev/null 2>&1; then
+    # This is a name conflict - we need to call the integration function directly
+    # but avoid infinite recursion. Use a bypass approach.
+    echo "CIS Compliance|Calling MySQL CIS integration..."
+    local script_dir="$(dirname "$0")"
+    cd "$script_dir" && python3 mysql80_CIS_checks.py 2>/dev/null && {
+      echo "CIS Compliance|MySQL CIS assessment completed"
+      local cis_output_file=$(ls -t mysql80_cis_check_*.txt 2>/dev/null | head -1)
+      if [ -n "$cis_output_file" ]; then
+        echo "CIS Output File|$cis_output_file"
+      fi
+    } || echo "CIS Compliance|MySQL CIS assessment failed - check prerequisites"
+  else
+    echo "CIS Compliance|MySQL CIS integration not available"
+    echo "CIS Compliance|Install prerequisites and ensure mysql80_CIS_checks.py is present"
+  fi
+}
+

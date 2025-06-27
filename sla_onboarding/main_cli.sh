@@ -66,6 +66,7 @@ source "$SCRIPT_DIR/error_handling.sh"
 source "$SCRIPT_DIR/performance_metrics.sh"
 source "$SCRIPT_DIR/backup_validation.sh"
 source "$SCRIPT_DIR/security_assessment.sh"
+source "$SCRIPT_DIR/cis_integration.sh"
 source "$SCRIPT_DIR/os_checks.sh"
 source "$SCRIPT_DIR/postgres_checks.sh"
 source "$SCRIPT_DIR/mysql_checks.sh"
@@ -78,20 +79,35 @@ init_error_handling
 usage() {
   cat <<USAGE
 Usage: $0 [OPTIONS]
-  --postgres         Run PostgreSQL checks
-  --mysql            Run MySQL checks
-  --mariadb          Run MariaDB checks
+  --postgres         Run PostgreSQL checks (includes CIS compliance if available)
+  --mysql            Run MySQL checks (includes CIS compliance if available)
+  --mariadb          Run MariaDB checks (includes CIS compliance if available)
   --os               Run OS checks
   --all              Run all checks
   --interactive      Interactive mode with guided execution
   --format=FORMAT    Output format: txt, csv, json (default: txt)
   --output=FILE      Write output to file instead of stdout
+  --test-cis         Test CIS integration prerequisites
   -h, --help         Show this help
 
 Interactive Mode:
   Use --interactive for guided execution suitable for Service Desk operators.
   This mode will detect databases, validate connectivity, and generate 
-  SLA-focused reports with clear explanations.
+  SLA-focused reports with clear explanations. For PostgreSQL, you can
+  optionally include CIS security compliance assessment.
+
+CIS Compliance:
+  Database assessments automatically include CIS security compliance checks
+  when prerequisites are met:
+  - PostgreSQL: CIS PostgreSQL 17 (requires Python3, psycopg/psycopg2)
+  - MySQL: CIS MySQL 8.0 (requires Python3, mysql-connector-python/PyMySQL)
+  - MariaDB: CIS MariaDB 10.11 (requires Python3, mysql-connector-python/PyMySQL)
+
+Examples:
+  $0 --interactive                    # Guided assessment for Service Desk
+  $0 --postgres --format=json        # PostgreSQL assessment with CIS checks
+  $0 --all --output=report.json      # Complete assessment including CIS
+  $0 --test-cis                      # Test CIS integration setup
 USAGE
 }
 
@@ -166,6 +182,7 @@ interactive_mode() {
   echo "  - Operating System configuration and security"
   if [ "$found_postgres" = true ]; then
     echo "  - PostgreSQL database assessment"
+    echo "  - PostgreSQL CIS security compliance checks (if available)"
   fi
   if [ "$found_mysql" = true ]; then
     echo "  - MySQL database assessment"
@@ -174,6 +191,51 @@ interactive_mode() {
     echo "  - MariaDB database assessment"
   fi
   echo ""
+  
+  # Optional CIS compliance checks
+  cis_any=false
+  if [ "$found_postgres" = true ] || [ "$found_mysql" = true ] || [ "$found_mariadb" = true ]; then
+    echo "Additional Security Assessment:"
+    echo "CIS (Center for Internet Security) compliance checks are available:"
+    
+    if [ "$found_postgres" = true ]; then
+      read -p "Run PostgreSQL CIS security compliance checks? (y/N): " run_pg_cis
+      if [[ "$run_pg_cis" =~ ^[Yy]$ ]]; then
+        echo "  ✓ CIS PostgreSQL 17 security compliance assessment will be included"
+        export INTERACTIVE_PG_CIS_ENABLED=true
+        cis_any=true
+      else
+        export INTERACTIVE_PG_CIS_ENABLED=false
+      fi
+    fi
+    
+    if [ "$found_mysql" = true ]; then
+      read -p "Run MySQL CIS security compliance checks? (y/N): " run_mysql_cis
+      if [[ "$run_mysql_cis" =~ ^[Yy]$ ]]; then
+        echo "  ✓ CIS MySQL 8.0 security compliance assessment will be included"
+        export INTERACTIVE_MYSQL_CIS_ENABLED=true
+        cis_any=true
+      else
+        export INTERACTIVE_MYSQL_CIS_ENABLED=false
+      fi
+    fi
+    
+    if [ "$found_mariadb" = true ]; then
+      read -p "Run MariaDB CIS security compliance checks? (y/N): " run_mariadb_cis
+      if [[ "$run_mariadb_cis" =~ ^[Yy]$ ]]; then
+        echo "  ✓ CIS MariaDB 10.11 security compliance assessment will be included"
+        export INTERACTIVE_MARIADB_CIS_ENABLED=true
+        cis_any=true
+      else
+        export INTERACTIVE_MARIADB_CIS_ENABLED=false
+      fi
+    fi
+    
+    if [ "$cis_any" = false ]; then
+      echo "  - CIS compliance checks will be skipped"
+    fi
+    echo ""
+  fi
   
   read -p "Continue with assessment? (y/N): " confirm
   if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
@@ -328,6 +390,7 @@ while [[ $# -gt 0 ]]; do
     --os) run_os=true ; shift ;;
     --all) run_postgres=true; run_mysql=true; run_mariadb=true; run_os=true; shift ;;
     --interactive) interactive=true; shift ;;
+    --test-cis) test_cis_integration; exit $? ;;
     --format=*) FORMAT="${1#*=}"; shift ;;
     --output=*) OUTPUT_FILE="${1#*=}"; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -374,6 +437,7 @@ if $run_postgres; then
   pg_performance_metrics
   pg_backup_validation
   pg_security_assessment
+  pg_cis_compliance_check
 fi
 if $run_mysql; then
   mysql_summary
@@ -389,6 +453,7 @@ if $run_mysql; then
   mysql_performance_metrics
   mysql_backup_validation
   mysql_security_assessment
+  mysql_cis_compliance_check
 fi
 if $run_mariadb; then
   mariadb_summary
@@ -404,6 +469,7 @@ if $run_mariadb; then
   mariadb_performance_metrics
   mariadb_backup_validation
   mariadb_security_assessment
+  mariadb_cis_compliance_check
 fi
 
 # Restore original echo function

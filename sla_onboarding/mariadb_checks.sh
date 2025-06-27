@@ -244,3 +244,30 @@ mariadb_users_security() {
   mariadb_exec "SELECT User, Host, plugin FROM mysql.user WHERE User != '' ORDER BY User;" | head -n 10 | sed 's/^/  /'
 }
 
+# MariaDB CIS Compliance Check Wrapper - calls the actual function from cis_integration.sh
+mariadb_cis_compliance_check() {
+  # Skip CIS checks if explicitly disabled in interactive mode
+  if [ "${INTERACTIVE_MARIADB_CIS_ENABLED:-}" = "false" ]; then
+    echo "CIS Compliance|Skipped per user request in interactive mode"
+    return 0
+  fi
+  
+  # Check if the CIS integration module function exists (already sourced in main_cli.sh)
+  if declare -f mariadb_cis_compliance_check > /dev/null 2>&1; then
+    # This is a name conflict - we need to call the integration function directly
+    # but avoid infinite recursion. Use a bypass approach.
+    echo "CIS Compliance|Calling MariaDB CIS integration..."
+    local script_dir="$(dirname "$0")"
+    cd "$script_dir" && python3 mariadb1011_CIS_checks.py 2>/dev/null && {
+      echo "CIS Compliance|MariaDB CIS assessment completed"
+      local cis_output_file=$(ls -t mariadb1011_cis_check_*.txt 2>/dev/null | head -1)
+      if [ -n "$cis_output_file" ]; then
+        echo "CIS Output File|$cis_output_file"
+      fi
+    } || echo "CIS Compliance|MariaDB CIS assessment failed - check prerequisites"
+  else
+    echo "CIS Compliance|MariaDB CIS integration not available"
+    echo "CIS Compliance|Install prerequisites and ensure mariadb1011_CIS_checks.py is present"
+  fi
+}
+

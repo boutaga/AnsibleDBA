@@ -16,11 +16,16 @@ AnsibleDBA is an Ansible playbooks repository for Open Source DBA automation, co
 # Interactive mode for Service Desk operators (recommended)
 ./sla_onboarding/main_cli.sh --interactive
 
-# Run all database checks with SLA assessment
+# Run all database checks with SLA assessment and CIS compliance
 ./sla_onboarding/main_cli.sh --all
 
-# Specific database checks with enhanced output formats
+# PostgreSQL assessment with CIS security compliance (requires Python3 + psycopg)
 ./sla_onboarding/main_cli.sh --postgres --format=json --output=report.json
+
+# Test CIS integration prerequisites
+./sla_onboarding/main_cli.sh --test-cis
+
+# Other database checks
 ./sla_onboarding/main_cli.sh --mysql --format=csv
 ./sla_onboarding/main_cli.sh --mariadb --format=text
 
@@ -46,12 +51,14 @@ Enhanced testing capabilities now include:
 - Security assessment validation
 - Backup validation testing
 - Monitoring discovery verification
+- CIS compliance integration testing
 
 Manual testing procedures:
 - Test interactive mode: `./sla_onboarding/main_cli.sh --interactive`
+- Test CIS integration: `./sla_onboarding/main_cli.sh --test-cis`
 - Verify error handling: Test with disconnected databases
-- Validate SLA assessment: Check tier recommendations against expected results
-- Test output formats: Verify text, CSV, and JSON outputs with SLA data
+- Validate SLA assessment: Check tier recommendations against expected results including security scoring
+- Test output formats: Verify text, CSV, and JSON outputs with SLA and CIS compliance data
 
 ## Architecture and Structure
 

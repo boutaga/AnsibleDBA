@@ -1,0 +1,45 @@
+collector_name: mssql_auto_growth_last_day
+min_interval: 6h
+ 
+metrics:
+  - metric_name: auto_growth_last_day
+    type: counter
+    help: 'Number of auto_growth events occurred last day'
+    key_labels: 
+      - DatabaseName
+      - StartTime
+    value_label: 'db_growth'
+    values:
+      - GrowthMB
+      - DurMS
+    query_ref: auto_growth_last_day
+ 
+queries:
+  - query_name: auto_growth_last_day
+    query: |
+        DECLARE @filename NVARCHAR(1000)
+        DECLARE @bc INT
+        DECLARE @ec INT
+        DECLARE @bfn VARCHAR(1000)
+        DECLARE @efn VARCHAR(10)    
+        SELECT @filename = CAST(value AS NVARCHAR(1000))
+        FROM ::fn_trace_getinfo(DEFAULT)
+        WHERE traceid = 1 AND property = 2
+        SET @filename = REVERSE(@filename)
+        SET @bc = CHARINDEX('.',@filename)
+        SET @ec = CHARINDEX('_',@filename)+1
+        SET @efn = REVERSE(SUBSTRING(@filename,1,@bc))
+        SET @bfn = REVERSE(SUBSTRING(@filename,@ec,LEN(@filename)))
+        SET @filename = @bfn + @efn
+        SELECT 
+        ftg.StartTime AS StartTime
+        ,te.name AS EventName
+        ,DB_NAME(ftg.databaseid) AS DatabaseName  
+        ,ftg.Filename
+        ,(ftg.IntegerData*8)/1024.0 AS GrowthMB 
+        ,(ftg.duration/1000)AS DurMS
+        FROM ::fn_trace_gettable(@filename, DEFAULT) AS ftg 
+        INNER JOIN sys.trace_events AS te ON ftg.EventClass = te.trace_event_id  
+        WHERE (ftg.EventClass = 92  -- Date File Auto-grow
+        OR ftg.EventClass = 93) --Log File Auto-grow and StartTime > convert(date, getdate()-1) and ftg.StartTime >= CONVERT(date,getdate()-1)
+        ORDER BY ftg.StartTime

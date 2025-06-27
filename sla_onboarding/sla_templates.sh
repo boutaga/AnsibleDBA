@@ -66,12 +66,34 @@ determine_sla_tier() {
         score=$((score + 15))
     fi
     
+    # CIS compliance security scoring
+    if echo "$data" | grep -qi "CIS Compliance Score"; then
+        local cis_score=$(echo "$data" | grep "CIS Compliance Score" | sed 's/.*|\([0-9]\+\)%.*/\1/' | head -1)
+        if [[ "$cis_score" =~ ^[0-9]+$ ]]; then
+            # Security compliance affects SLA tier
+            if [ "$cis_score" -ge 90 ]; then
+                score=$((score + 15))  # Excellent security - higher confidence
+            elif [ "$cis_score" -ge 80 ]; then
+                score=$((score + 10))  # Good security
+            elif [ "$cis_score" -ge 70 ]; then
+                score=$((score + 5))   # Fair security
+            elif [ "$cis_score" -lt 50 ]; then
+                score=$((score - 10))  # Poor security - lower tier due to risk
+            fi
+        fi
+    fi
+    
+    # Security-specific tier adjustments
+    if echo "$data" | grep -qi "CIS.*FAILED.*authentication\|CIS.*FAILED.*ssl\|CIS.*FAILED.*audit"; then
+        score=$((score - 5))  # Critical security failures lower confidence
+    fi
+    
     # Suggest tier based on score
-    if [ "$score" -ge 70 ]; then
+    if [ "$score" -ge 75 ]; then
         echo "CRITICAL"
-    elif [ "$score" -ge 50 ]; then
+    elif [ "$score" -ge 55 ]; then
         echo "HIGH"
-    elif [ "$score" -ge 30 ]; then
+    elif [ "$score" -ge 35 ]; then
         echo "STANDARD"
     else
         echo "LOW"
@@ -145,6 +167,33 @@ assess_support_requirements() {
     # Backup management
     if echo "$data" | grep -qi "backup.*config\|archive.*mode"; then
         requirements+=("Backup and recovery management")
+    fi
+    
+    # CIS compliance and security expertise
+    if echo "$data" | grep -qi "CIS"; then
+        local cis_failed=$(echo "$data" | grep "CIS Failed Checks" | sed 's/.*|\([0-9]\+\).*/\1/' | head -1)
+        if [[ "$cis_failed" =~ ^[0-9]+$ ]] && [ "$cis_failed" -gt 0 ]; then
+            requirements+=("Security compliance and hardening expertise")
+        fi
+        
+        # Specific security expertise based on failed checks
+        if echo "$data" | grep -qi "CIS.*FAILED.*authentication"; then
+            requirements+=("Authentication security configuration")
+        fi
+        if echo "$data" | grep -qi "CIS.*FAILED.*ssl\|CIS.*FAILED.*tls"; then
+            requirements+=("SSL/TLS security configuration")
+        fi
+        if echo "$data" | grep -qi "CIS.*FAILED.*audit\|CIS.*FAILED.*logging"; then
+            requirements+=("Audit and logging configuration")
+        fi
+        if echo "$data" | grep -qi "CIS.*FAILED.*permissions\|CIS.*FAILED.*privileges"; then
+            requirements+=("Access control and privilege management")
+        fi
+    fi
+    
+    # Monitoring and observability
+    if echo "$data" | grep -qi "monitoring.*detected\|pmm\|prometheus\|grafana"; then
+        requirements+=("Monitoring and observability expertise")
     fi
     
     echo "${requirements[*]}"
