@@ -488,7 +488,48 @@ groups:
 4. **Regular password rotation** for monitoring accounts
 5. **Consider Oracle Wallet** for password-less authentication
 6. **Monitor exporter logs** for security events
-7. **🆕 External KMS Integration** - Store sensitive credentials in external Key Management Services
+
+## 🎯 Integration with PMM
+
+If using Percona Monitoring and Management:
+
+1. **Add Oracle as Custom Service**:
+   ```bash
+   pmm-admin add external --listen-port=9161 oracle-database
+   ```
+
+2. **Import Grafana Dashboards** for Oracle monitoring
+
+3. **Configure Alertmanager** integration for notifications
+
+## 📚 References
+
+- [Oracle Database Monitoring Best Practices](https://docs.oracle.com/database/121/ADMIN/monitor.htm)
+- [Oracle DataGuard Documentation](https://docs.oracle.com/database/121/SBYDB/toc.htm)
+- [Oracle ASM Administration](https://docs.oracle.com/database/121/OSTMG/toc.htm)
+- [RMAN Backup and Recovery](https://docs.oracle.com/database/121/BRADV/toc.htm)
+- [Prometheus Oracle Exporter](https://github.com/iamseth/oracledb_exporter)
+- [Oracle Observability Project](https://github.com/oracle/oracle-db-appdev-monitoring)
+
+## 🤝 Contributing
+
+To add new custom metrics:
+
+1. Add SQL query to `custom-metrics.toml`
+2. Test query in Oracle SQL*Plus
+3. Restart exporter service
+4. Verify metrics in Prometheus
+5. Update documentation
+
+## 📝 License
+
+This configuration is provided as-is for Oracle Database monitoring with Prometheus/PMM. Refer to individual component licenses for specific terms.
+
+
+
+## Not released yet :    
+
+**🆕 External KMS Integration** - Store sensitive credentials in external Key Management Services
 
 ---
 
@@ -760,25 +801,25 @@ sudo ./deploy-multi.sh rotate-secrets prod-db1
 
 ### Implementation Timeline
 
-#### **Phase 1: Core KMS Integration** (4-6 weeks)
+#### **Phase 1: Core KMS Integration** 
 - [ ] HashiCorp Vault integration
 - [ ] Enhanced systemd template with KMS support
 - [ ] Credential resolution script (`oracle-kms-resolver`)
 - [ ] Basic authentication methods (token, AWS IAM)
 
-#### **Phase 2: Multi-Provider Support** (6-8 weeks)
+#### **Phase 2: Multi-Provider Support** 
 - [ ] AWS Secrets Manager integration
 - [ ] Azure Key Vault integration
 - [ ] Google Secret Manager integration
 - [ ] Enhanced management commands
 
-#### **Phase 3: Enterprise Features** (4-6 weeks)
+#### **Phase 3: Enterprise Features** 
 - [ ] Automatic credential rotation
 - [ ] Advanced authentication methods
 - [ ] KMS health monitoring and alerting
 - [ ] Comprehensive documentation and examples
 
-#### **Phase 4: Advanced Integration** (2-4 weeks)
+#### **Phase 4: Advanced Integration** 
 - [ ] Prometheus metrics for KMS operations
 - [ ] Grafana dashboards for KMS monitoring
 - [ ] Integration with Oracle Wallet
@@ -814,39 +855,3 @@ sudo ./deploy-multi.sh restart prod-db1
 ```
 
 This KMS integration would significantly enhance the security posture of the Oracle monitoring solution while maintaining the ease of use and management capabilities of the multi-instance deployment approach.
-
-## 🎯 Integration with PMM
-
-If using Percona Monitoring and Management:
-
-1. **Add Oracle as Custom Service**:
-   ```bash
-   pmm-admin add external --listen-port=9161 oracle-database
-   ```
-
-2. **Import Grafana Dashboards** for Oracle monitoring
-
-3. **Configure Alertmanager** integration for notifications
-
-## 📚 References
-
-- [Oracle Database Monitoring Best Practices](https://docs.oracle.com/database/121/ADMIN/monitor.htm)
-- [Oracle DataGuard Documentation](https://docs.oracle.com/database/121/SBYDB/toc.htm)
-- [Oracle ASM Administration](https://docs.oracle.com/database/121/OSTMG/toc.htm)
-- [RMAN Backup and Recovery](https://docs.oracle.com/database/121/BRADV/toc.htm)
-- [Prometheus Oracle Exporter](https://github.com/iamseth/oracledb_exporter)
-- [Oracle Observability Project](https://github.com/oracle/oracle-db-appdev-monitoring)
-
-## 🤝 Contributing
-
-To add new custom metrics:
-
-1. Add SQL query to `custom-metrics.toml`
-2. Test query in Oracle SQL*Plus
-3. Restart exporter service
-4. Verify metrics in Prometheus
-5. Update documentation
-
-## 📝 License
-
-This configuration is provided as-is for Oracle Database monitoring with Prometheus/PMM. Refer to individual component licenses for specific terms.
