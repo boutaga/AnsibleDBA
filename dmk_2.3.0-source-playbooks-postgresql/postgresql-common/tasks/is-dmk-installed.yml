@@ -1,0 +1,5 @@
+- name: check if DMK is installed
+  stat:
+    path: /home/{{ postgres_user }}/.DMK_HOME
+  register: dmk_installed
+

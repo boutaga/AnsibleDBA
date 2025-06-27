@@ -1,0 +1,63 @@
+- name: Check if PostgreSQL is already installed
+  stat:
+    path: /u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}/bin/postgres
+  register: postrgresql_is_installed
+
+- name: Download the PostgreSQL source code if PostgreSQL is not already installed
+  get_url:
+    url: https://ftp.postgresql.org/pub/source/v{{ postgresql_version }}/postgresql-{{ postgresql_version }}.tar.bz2
+    dest: /home/{{ postgres_user }}/pgv_{{ postgresql_version }}_source.tar.bz2
+    mode: 0775
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+  when: postrgresql_is_installed.stat.exists == false
+
+- name: Extract the sources when PostgreSQL is not already installed
+  shell: cd /home/{{ postgres_user }}; tar -axf pgv_{{ postgresql_version }}_source.tar.bz2
+  become: yes
+  become_user: "{{ postgres_user }}"
+  when: postrgresql_is_installed.stat.exists == false
+
+- template:
+    src: compile.sh.j2
+    dest: /home/{{ postgres_user }}/postgresql-{{ postgresql_version }}/compile.sh
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+    mode: 0700
+  when: postrgresql_is_installed.stat.exists == false
+
+- name: Install PostgreSQL from source code
+  shell: cd /home/{{ postgres_user }}/postgresql-{{ postgresql_version }}; ./compile.sh
+  become: yes
+  become_user: "{{ postgres_user }}"
+  when: postrgresql_is_installed.stat.exists == false
+
+- name: Check if DMK is installed
+  stat:
+    path: /home/{{ postgres_user }}/.DMK_HOME
+  register: dmk_installed
+
+- name: Add to DMK
+  lineinfile:
+    path: /etc/pgtab
+    line: 'pg{{ postgresql_version }}:/u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}:dummy:9999:D'
+    create: no
+  when: dmk_installed.stat.exists == true
+
+- name : Fixate PostgreSQL library path
+  copy:
+    dest: /etc/ld.so.conf.d/postgres.conf
+    content: /u01/app/{{ postgres_user}}/product/{{ dmk_postgresql_version }}/lib/
+  become: yes
+  become_user: root
+
+- name: Remove source tarball
+  file:
+    state: absent
+    path: "/home/{{ postgres_user }}/pgv_{{ postgresql_version }}_source.tar.bz2" 
+
+- name: Remove extracted source code
+  file:
+    state: absent
+    path: "/home/{{ postgres_user }}/postgresql-{{ postgresql_version }}"
+

@@ -1,0 +1,109 @@
+- name: Install all dependencies on Red Hat based systems
+  when: ansible_facts['distribution'] == 'CentOS' or
+        ansible_facts['distribution'] == 'RedHat' or
+        ansible_facts['distribution'] == 'Rocky' or
+        ansible_facts['distribution'] == 'AlmaLinux' 
+  include_tasks:
+    file: rhel-based.yml
+
+- name: Install all dependencies on Debian based systems
+  when: ansible_facts['distribution'] == 'Debian' 
+  include_tasks:
+    file: debian-based.yml
+
+- name: Install all dependencies on SUSE based systems
+  when: ansible_facts['distribution'] == 'SLES' 
+  include_tasks:
+    file: suse-based.yml
+
+- name: Check and fix /u01/app/{{ postgres_user }}/local
+  file:
+    path: /u01/app/{{ postgres_user }}/local
+    state: directory
+    mode: 0700
+    recurse: yes
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+
+- name: Check and fix /u01
+  file:
+    path: /u01
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_user }}"
+    mode: 0700
+
+- name: Check and fix /u01/app
+  file:
+    path: /u01/app
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+    mode: 0700
+
+- name: Check and fix /u01/app/{{ postgres_user }}
+  file:
+    path: /u01/app/{{ postgres_user }}
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+    mode: 0700
+
+- name: Check and fix /u02/pgdata/
+  file:
+    path: /u02/pgdata/
+    state: directory
+    mode: 0700
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+
+- name: Check and fix /u02/pgdata/{{ postgresql_major_version }}
+  file:
+    path: /u02/pgdata/{{ postgresql_major_version }}
+    state: directory
+    mode: 0700
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+
+- name: Check and fix /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}
+  file:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}
+    state: directory
+    mode: 0700
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+
+- name: Check and fix /u99/pgdata/
+  file:
+    path: /u99/pgdata/
+    state: directory
+    mode: 0700
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+
+- lineinfile:
+    path: /home/{{ postgres_user }}/.bash_profile
+    insertbefore: '^#'
+    line: 'export LC_ALL="en_US.UTF-8"'
+    firstmatch: yes
+    create: no
+
+- name: Create the tuning profile 
+  file:
+    path: /etc/tuned/dbi-postgres
+    state: directory
+    mode: 0755
+    recurse: yes
+    owner: root
+    group: root
+
+- name: Copy the tuning profile
+  copy:
+    src: tuned.conf
+    dest: /etc/tuned/dbi-postgres/tuned.conf
+    owner: root
+    group: root
+    mode: 0644
+
+- name: switch the tuning profile
+  shell: tuned-adm profile dbi-postgres
+  become: yes
+  become_user: root
+

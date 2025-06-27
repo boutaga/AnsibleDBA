@@ -1,0 +1,21 @@
+name: {{ ansible_hostname }}
+data-dir: /u02/pgdata/etcd
+enable-v2: true
+
+{% if ansible_os_family == "Suse" %}
+initial-advertise-peer-urls: http://{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}:2380
+listen-peer-urls: http://{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}:2380
+listen-client-urls: http://{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}:2379,http://localhost:2379
+advertise-client-urls: http://{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}:2379
+initial-cluster:{{ blank }} {%- for h in ansible_play_hosts %}
+{{ hostvars[h]['ansible_hostname'] }}=http://{{ hostvars[h]['ansible_default_ipv4']['address'] }}:2380{% if not loop.last %},{% endif %}
+{% endfor %}
+{% else %}
+initial-advertise-peer-urls: http://{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}:2380
+listen-peer-urls: http://{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}:2380
+listen-client-urls: http://{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}:2379,http://localhost:2379
+advertise-client-urls: http://{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}:2379
+initial-cluster:{{ blank }} {%- for h in ansible_play_hosts %}
+{{ hostvars[h]['ansible_hostname'] }}=http://{{ hostvars[h]['ansible_default_ipv4']['address'] }}:2380{% if not loop.last %},{% endif %}
+{% endfor %}
+{% endif %}

@@ -1,0 +1,20 @@
+[postgresql_servers]
+192.168.100.178
+
+[postgresql_servers:vars]
+postgresql_version=14.1
+postgresql_major_version=14
+dmk_postgresql_version=14/db_1
+postgres_user=postgres
+postgres_group=postgres
+cluster_name=PG1
+cluster_port=5432
+dmk_version=21-05.4
+timezone=Europe/Zurich
+# the extensions playbooks need be
+# included manually, they are not
+# executed automatically
+pg_cron_version=1.4.1
+# For PostGIS on SLES 15 you need
+# to attached the sle-we/15.3/x86_64 module
+postgis_version=3.1.4

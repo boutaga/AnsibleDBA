@@ -1,0 +1,11 @@
+[global]
+repo1-host={{ backup_server }}
+repo1-host-user={{ postgres_user }}
+repo1-path={{ repo1_path }}
+log-path={{ local_dmk_path }}log
+log-level-file=detail
+spool-path=/tmp
+
+[{{ stanza }}]
+pg1-path={{ pgdata }}
+pg1-port={{ postgres_port }}

@@ -1,0 +1,18 @@
+- name: check for services status
+  service_facts:
+  register: service_state
+
+- name: Gather package facts
+  package_facts:
+    manager: auto
+
+- name: Open ports when firewall is running
+  when:
+    - "'firewalld' in ansible_facts.packages"
+    - service_state.ansible_facts.services["firewalld.service"].state=='running'
+  firewalld:
+    port: 2379-2380/tcp
+    permanent: true
+    state: enabled
+
+

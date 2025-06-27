@@ -1,0 +1,319 @@
+- name: Get PGDATA for this cluster
+  include_role:
+    name: postgresql-common
+    tasks_from: get-pgdata-from-cluster-name
+
+- name: Check if a PostgreSQL instance already was initialized
+  stat:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/base
+  register: postgresql_is_initialized
+
+- name: Initialize the PostgreSQL instance
+  shell: /u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}/bin/initdb -D /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }} -k
+  become: yes
+  become_user: "{{ postgres_user }}"
+  when: postgresql_is_initialized.stat.exists == false
+
+- name: Apply the port
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: 'port={{ cluster_port }}'
+    create: no
+
+- name: Apply listen_addresses
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "listen_addresses='*'"
+    create: no
+
+- name: Apply logging_collector
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "logging_collector='on'"
+    create: no
+
+- name: Apply log_truncate_on_rotation
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "log_truncate_on_rotation='on'"
+    create: no
+
+- name: Apply log_filename
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "log_filename='postgresql-%a.log'"
+    create: no
+
+- name: Apply log_rotation_age
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "log_rotation_age='1440'"
+    create: no
+
+- name: Apply log_line_prefix
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "log_line_prefix='%m - %l - %p - %h - %u@%d - %x'"
+    create: no
+
+- name: Apply log_directory
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "log_directory='pg_log'"
+    create: no
+
+- name: Apply log_autovacuum_min_duration
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "log_autovacuum_min_duration='60s'"
+    create: no
+
+- name: Apply log_min_duration_statement
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "log_min_duration_statement='30s'"
+    create: no
+
+- name: Apply log_checkpoints
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "log_checkpoints='on'"
+    create: no
+
+- name: Apply log_statement
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "log_statement='ddl'"
+    create: no
+
+- name: Apply log_lock_waits
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "log_lock_waits='on'"
+    create: no
+
+- name: Apply log_temp_files
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "log_temp_files='4MB'"
+    create: no
+
+- name: Apply log_timezone
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "log_timezone='{{ timezone }}'"
+    create: no
+
+- name: Apply checkpoint_completion_target
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "checkpoint_completion_target=0.9"
+    create: no
+
+- name: Apply checkpoint_timeout
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "checkpoint_timeout='20min'"
+    create: no
+
+- name: Apply client_min_messages
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "client_min_messages='WARNING'"
+    create: no
+
+- name: Apply wal_level
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "wal_level='replica'"
+    create: no
+
+- name: Apply hot_standby_feedback
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "hot_standby_feedback='on'"
+    create: no
+
+- name: Apply max_wal_senders
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "max_wal_senders=10"
+    create: no
+
+- name: Apply cluster_name
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "cluster_name='{{ cluster_name }}'"
+    create: no
+
+- name: Apply max_replication_slots
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "max_replication_slots=10"
+    create: no
+
+- name: Apply wal_compression
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "wal_compression=on"
+    create: no
+
+- name: Apply max_wal_senders
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "max_wal_senders=20"
+    create: no
+
+- name: Apply shared_preload_libraries
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "shared_preload_libraries='pg_stat_statements'"
+    create: no
+
+- name: Apply autovacuum_max_workers
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "autovacuum_max_workers=6"
+    create: no
+
+- name: Apply autovacuum_vacuum_scale_factor
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "autovacuum_vacuum_scale_factor=0.1"
+    create: no
+
+- name: Apply autovacuum_vacuum_cost_limit
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "autovacuum_vacuum_cost_limit=3000"
+    create: no
+
+- name: Apply archive_mode
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "archive_mode=on"
+    create: no
+
+- name: Apply archive_command
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "archive_command='/bin/true'"
+    create: no
+
+- name: Apply wal_log_hints
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "wal_log_hints='on'"
+    create: no
+
+- name: Apply password_encryption
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "password_encryption='scram-sha-256'"
+    create: no
+
+- name: Apply shared_buffers
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "shared_buffers='{{ shared_buffers }}'"
+    create: no
+
+- name: Apply work_mem
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "work_mem='{{ work_mem }}'"
+    create: no
+
+- name: Apply maintenance_work_mem
+  lineinfile:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/postgresql.auto.conf
+    line: "maintenance_work_mem='{{ maintenance_work_mem }}'"
+    create: no
+
+- name: Check DMK entry for the instance
+  lineinfile:
+    path: /etc/pgtab
+    line: '{{ cluster_name }}:/u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}:/u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}:{{ cluster_port }}:Y'
+    create: no
+
+- name: Check and fix PostgreSQL log directory
+  file:
+    path: /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}/pg_log
+    state: directory
+    mode: 0700
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+
+- name: copy the systemd service file
+  shell: cp /u01/app/{{ postgres_user }}/local/dmk/templates/init.d/dbpostgres-manual.service /etc/systemd/system/{{ cluster_name}}.service
+  become: yes
+  become_user: "root"
+
+- name: fix exec start in systemd service file
+  lineinfile:
+    path: /etc/systemd/system/{{ cluster_name}}.service
+    regexp: "^ExecStart"
+    line: 'ExecStart=/u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}/bin/postgres -D /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}'
+    state: present
+
+- name: fix exec reload in systemd service file
+  lineinfile:
+    path: /etc/systemd/system/{{ cluster_name}}.service
+    regexp: "^ExecReload"
+    line: 'ExecReload=/u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}/bin/pg_ctl -D /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }} reload'
+    state: present
+
+- name: fix description in systemd service file
+  lineinfile:
+    path: /etc/systemd/system/{{ cluster_name}}.service
+    regexp: "^Description"
+    line: 'Description=PostgreSQL service for cluster {{ cluster_name }}'
+    state: present
+
+- name: fix dependency on tuned
+  lineinfile:
+    path: /etc/systemd/system/{{ cluster_name}}.service
+    insertafter: "^Description"
+    line: 'After=tuned.service'
+    state: present
+
+- name: force systemd to reread configs
+  systemd:
+    daemon_reload: yes
+
+- name: Enable the systemd postgres service
+  systemd:
+    name: "{{ cluster_name }}.service"
+    enabled: yes
+
+- name: get the current selinux context for postgres
+  when: 
+    - ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == "8"
+  shell: semanage fcontext --list | grep postgres  | grep u01 | grep bin_t | cat
+  register: fcontext
+
+- name: set the selinux context for the postgres binary
+  command: /usr/sbin/semanage fcontext -a -t bin_t /u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}/bin/postgres
+  when:
+    - ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == "8" 
+    - fcontext.stdout == ""
+
+- name: restorecon for postgres
+  when: 
+    - ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == "8"
+  command: /sbin/restorecon -v /u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}/bin/postgres
+
+- name: Make sure the service is running
+  systemd:
+    state: started
+    name: "{{ cluster_name }}.service"
+

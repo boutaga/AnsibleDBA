@@ -1,0 +1,30 @@
+- name: Enable the powertools repository
+  when: ansible_facts['distribution_major_version'] == "8" 
+  yum:
+    name:
+    - dnf-plugins-core
+
+- name: extract the sources for PostGIS
+  when: ansible_facts['distribution_major_version'] == "8"
+  shell: yum config-manager --set-enabled powertools
+  args:
+    warn: false
+  become: yes
+  become_user: root
+
+- name: Install all dependencies for PostgreSQL on Red Hat, Rocky Linux, Alma Linux 8
+  when: ansible_facts['distribution_major_version'] == "8"
+  yum:
+    name:
+    - libxml2-devel
+    - openldap-devel
+    - gdal-devel
+    - proj-devel
+    - geos-devel
+    - json-c-devel
+    - docbook-style-xsl
+    - protobuf
+    - protobuf-c
+    - protobuf-c-devel
+    - protobuf-c-compiler
+

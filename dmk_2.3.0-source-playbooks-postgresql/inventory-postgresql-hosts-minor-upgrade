@@ -1,0 +1,13 @@
+[postgresql_servers]
+192.168.100.228
+
+[postgresql_servers:vars]
+postgresql_version=13.3
+postgresql_major_version=13
+dmk_postgresql_version=13/db_3
+postgres_user=postgres
+postgres_group=postgres
+cluster_name=PG1
+cluster_port=5432
+timezone=Europe/Zurich
+

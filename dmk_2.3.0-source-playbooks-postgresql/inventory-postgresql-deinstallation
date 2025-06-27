@@ -1,0 +1,10 @@
+[postgresql_servers]
+192.168.100.228
+
+[postgresql_servers:vars]
+postgresql_version=13.0
+postgresql_major_version=13
+dmk_postgresql_version=13/db_0
+postgres_user=postgres
+postgres_group=postgres
+

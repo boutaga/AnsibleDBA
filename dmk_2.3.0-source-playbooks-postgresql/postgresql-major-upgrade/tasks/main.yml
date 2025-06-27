@@ -1,0 +1,97 @@
+- name: Check if DMK is installed
+  include_role:
+    name: postgresql-common
+    tasks_from: is-dmk-installed
+
+- name: End the playbook when DMK is not installed
+  meta: end_play
+  when: dmk_installed.stat.exists == false
+    
+- name: Get PostgreSQL Home for a given cluster
+  include_role:
+    name: postgresql-common
+    tasks_from: get-postgresql-home-from-cluster-name
+
+- name: Get PGDATA for this cluster
+  include_role:
+    name: postgresql-common
+    tasks_from: get-pgdata-from-cluster-name
+
+- name: Get PGPORT for this cluster
+  include_role:
+    name: postgresql-common
+    tasks_from: get-port-from-cluster-name
+
+
+- name: Check that pg_ctl actually exists for the new cluster
+  file:
+    path: /u01/app/{{ postgres_user }}/product/{{dmk_postgresql_target_version}}/bin/pg_ctl
+    state: file
+
+- name: Check if a PostgreSQL instance already was initialized
+  stat:
+    path: /u02/pgdata/{{ postgresql_target_major_version }}/{{ cluster_name }}/base
+  register: postgresql_is_initialized
+
+- name: initialize the new cluster
+  shell: "/u01/app/{{ postgres_user }}/product/{{dmk_postgresql_target_version}}/bin/initdb -D /u02/pgdata/{{ postgresql_target_major_version }}/{{ cluster_name }}"
+  become: yes
+  become_user: "{{ postgres_user }}"
+  when: postgresql_is_initialized.stat.exists == false
+
+- name: copy the configuration file from the old to the new cluster
+  shell: "cp -p -d {{ pgdata.stdout }}/*.conf /u02/pgdata/{{ postgresql_target_major_version }}/{{ cluster_name }}/"
+  become: yes
+  become_user: "{{ postgres_user }}"
+
+- name: run pg_upgrade in check mode
+  shell: "/u01/app/{{ postgres_user }}/product/{{dmk_postgresql_target_version}}/bin/pg_upgrade -b {{ pg_home.stdout }}/bin -B /u01/app/{{ postgres_user }}/product/{{dmk_postgresql_target_version}}/bin -d {{ pgdata.stdout }} -D /u02/pgdata/{{ postgresql_target_major_version }}/{{ cluster_name }} -c"
+  become: yes
+  become_user: "{{ postgres_user }}"
+
+- name: stop the old cluster
+  shell: "{{ pg_home.stdout }}//bin/pg_ctl -D {{ pgdata.stdout }} stop -m fast"
+  become: yes
+  become_user: "{{ postgres_user }}"
+
+- name: do the upgrade in link mode
+  shell: "/u01/app/{{ postgres_user }}/product/{{dmk_postgresql_target_version}}/bin/pg_upgrade -b {{ pg_home.stdout }}/bin -B /u01/app/{{ postgres_user }}/product/{{dmk_postgresql_target_version}}/bin -d {{ pgdata.stdout }} -D /u02/pgdata/{{ postgresql_target_major_version }}/{{ cluster_name }} -k -j 2"
+  become: yes
+  become_user: "{{ postgres_user }}"
+
+- name: start the new cluster
+  shell: "/u01/app/{{ postgres_user }}/product/{{dmk_postgresql_target_version}}/bin/pg_ctl -D /u02/pgdata/{{ postgresql_target_major_version }}/{{ cluster_name }} start -l /dev/null"
+  become: yes
+  become_user: "{{ postgres_user }}"
+
+- name: collect the statistics
+  shell: "/home/{{ postgres_user }}/analyze_new_cluster.sh"
+  become: yes
+  become_user: "{{ postgres_user }}"
+
+- name: delete the old cluster
+  shell: "/home/{{ postgres_user }}/delete_old_cluster.sh"
+  become: yes
+  become_user: "{{ postgres_user }}"
+
+- name: delete the pg_upgrade script
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - "/home/{{ postgres_user }}/delete_old_cluster.sh"
+    - "/home/{{ postgres_user }}/analyze_new_cluster.sh"
+
+- name: update pgtab
+  lineinfile: 
+    path: /etc/pgtab
+    regexp: "^{{ cluster_name }}" 
+    line: '{{ cluster_name }}:/u01/app/{{ postgres_user }}/product/{{dmk_postgresql_target_version}}:/u02/pgdata/{{ postgresql_target_major_version }}/{{cluster_name}}:{{ pgport.stdout }}:Y'
+    state: present
+
+
+  
+
+
+##
+#- debug: msg="{{ pg_home.stdout }}"

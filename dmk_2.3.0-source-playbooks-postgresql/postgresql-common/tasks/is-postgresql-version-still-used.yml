@@ -1,0 +1,5 @@
+- name: Is the PostgreSQL version still used (in pgtab)
+  shell: "grep {{ dmk_postgresql_version }} /etc/pgtab | grep -vi dummy"
+  register: postgres_is_used
+  failed_when: postgres_is_used.rc == 0
+ 

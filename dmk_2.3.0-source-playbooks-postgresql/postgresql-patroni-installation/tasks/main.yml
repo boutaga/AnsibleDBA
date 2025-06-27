@@ -1,0 +1,391 @@
+- name: Install all dependencies for Patroni on flavors of Red Hat 8
+  when: ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == "8"
+  yum:
+    name:
+      - python3-pip
+      - python3-pyyaml
+      - bind-utils
+      - keepalived
+      - haproxy 
+      - chrony
+#      - watchdog
+    state: present
+
+- name: Install all dependencies for Patroni on Debian
+  when: ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == "10" or
+        ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == "11"
+  apt:
+    pkg:
+      - python3-pip
+      - python3-yaml
+#      - bind-utils
+      - keepalived
+      - haproxy 
+      - chrony
+#      - watchdog
+      
+- name: Install all dependencies for PostgreSQL on SLES 15
+  when: ansible_facts['distribution'] == 'SLES' and ansible_facts['distribution_major_version'] == "15"
+  zypper:
+    name:
+      - python3-pip
+      - python3-PyYAML
+      - bind-utils
+      - keepalived
+      - haproxy 
+      - chrony
+#      - python3-watchdog
+
+- name: Create /etc/hosts file
+  template:
+    src: hosts.j2
+    dest: /etc/hosts
+    owner: root
+    group: root
+    mode: 0644
+ 
+#- name: Copy the watchdog.conf template
+#  template:
+#    src: watchdog.conf.j2
+#    dest: /etc/watchdog.conf
+#    owner: root
+#    group: root
+#    mode: 0644
+
+- name: check for services status
+  service_facts:
+  register: service_state
+
+- name: Gather package facts
+  package_facts:
+    manager: auto
+
+- name: Open ports for etcd and patroni when firewall is running
+  when: 
+    - "'firewalld' in ansible_facts.packages"
+    - service_state.ansible_facts.services["firewalld.service"].state=='running'
+  firewalld:
+    port: 2379-2380/tcp
+    permanent: true
+    state: enabled
+
+- name: Open ports for PostgreSQL when firewall is running
+  when:
+    - "'firewalld' in ansible_facts.packages"
+    - service_state.ansible_facts.services["firewalld.service"].state=='running'
+  firewalld:
+    port: 5432/tcp
+    permanent: true
+    state: enabled
+
+- name: Enable the systemd patroni service
+  when:
+    - "'firewalld' in ansible_facts.packages"
+    - service_state.ansible_facts.services["firewalld.service"].state=='running'
+  systemd:
+    name: firewalld
+    state: restarted
+
+- name: Check if etcd sources already exist
+  stat:
+    path: /home/{{ postgres_user }}/etcd-v{{ etcd_version }}-linux-amd64.tar.gz
+  register: etcd_source_available
+ 
+- name: Download etcd
+  get_url:
+    url: https://github.com/etcd-io/etcd/releases/download/v{{ etcd_version }}/etcd-v{{ etcd_version }}-linux-amd64.tar.gz
+    dest: /home/{{ postgres_user }}/etcd-v{{ etcd_version }}-linux-amd64.tar.gz
+    mode: 0755
+  when: etcd_source_available.stat.exists == false
+  
+
+- name: Check if etcd is available in DMK
+  stat:
+    path: /u01/app/{{ postgres_user }}/local/dmk/bin/etcd
+
+  register: etcd_copied_to_dmk
+ 
+- name: Extract etcd
+  shell: cd /home/{{ postgres_user }}/; tar -axf etcd-v{{ etcd_version }}-linux-amd64.tar.gz
+  become: yes
+  become_user: "{{ postgres_user }}"
+  when: etcd_copied_to_dmk.stat.exists == false
+ 
+- name: copy etcd to DMK
+  shell: cp /home/{{ postgres_user }}/etcd-v{{ etcd_version }}-linux-amd64/etcd* /u01/app/{{ postgres_user }}/local/dmk/bin/
+  become: yes
+  become_user: "{{ postgres_user }}"
+  when: etcd_copied_to_dmk.stat.exists == false
+ 
+- template:
+    src: etcd.conf.j2
+    dest: /u01/app/{{ postgres_user }}/local/dmk/etc/etcd.conf
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+    mode: 0700
+ 
+- name: Copy the etcd systemd service file
+  copy:
+    src: etcd.service
+    dest: /etc/systemd/system/etcd.service
+    owner: root
+    group: root
+    mode: 0755
+ 
+- file:
+    path: /u02/pgdata/etcd
+    state: directory
+    mode: 0700
+    recurse: yes
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+
+- name: get the current selinux context for etcd
+  when: ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == "8"
+  shell: semanage fcontext --list | grep etcd  | grep u01 | grep bin_t | cat
+  register: fcontext
+
+- name: set the selinux context for etcd
+  command: /usr/sbin/semanage fcontext -a -t bin_t /u01/app/{{ postgres_user }}/local/dmk/bin/etcd
+  when:
+    - ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == "8" 
+    - fcontext.stdout == ""
+
+
+- name: restorecon for postgres
+  when: ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == "8" 
+  command: /sbin/restorecon -v /u01/app/{{ postgres_user }}/local/dmk/bin/etcd
+
+ 
+- name: force systemd to reread configs
+  systemd:
+    daemon_reload: yes
+ 
+- name: Enable the systemd etcd service
+  systemd:
+    name: etcd
+    enabled: yes
+ 
+#- name: Enable the systemd watchdog service on CentOS/RedHat/Debian
+#  when: ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+#        ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8" or
+#        ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == "8" or
+#        ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == "8" or
+#        ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == "10" or
+#        ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == "11"
+#  systemd:
+#    name: watchdog
+#    enabled: yes
+
+- name: Start service chronyd, if not started
+  service:
+    name: chronyd
+    state: started
+
+#- name: Start service watchdog, if not started 
+#  when: ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+#        ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8" or
+#        ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == "8" or
+#        ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == "8" or
+#        ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == "10" or
+#        ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == "11"
+#  service:
+#    name: watchdog
+#    state: started
+
+- name: Start service etcd, if not started
+  service:
+    name: etcd
+    state: started
+
+- name: check if patroni is already installed
+  stat:
+    path: /home/{{ postgres_user }}/.local/bin/patroni
+  register: patroni_is_installed
+ 
+- name: install and upgrade pip
+  shell: python3 -m pip install --upgrade pip
+  become: yes
+  become_user: root
+  when: patroni_is_installed.stat.exists == false
+  
+- name: install and upgrade setuptools
+  become: yes
+  become_user: "{{ postgres_user }}"
+  shell: python3 -m pip install --upgrade --user setuptools
+  when: patroni_is_installed.stat.exists == false
+ 
+- name: install psycopg2-binary
+  become: yes
+  become_user: "{{ postgres_user }}"
+  shell: python3 -m pip install --user psycopg2-binary
+  when: patroni_is_installed.stat.exists == false
+ 
+- name: install patroni
+  become: yes
+  become_user: "{{ postgres_user }}"
+  shell: python3 -m pip install --user patroni[etcd]
+  when: patroni_is_installed.stat.exists == false
+
+- name: soft link patroni to dmk 
+  file:
+    src: /home/{{ postgres_user }}/.local/bin/patroni
+    dest: /u01/app/{{ postgres_user }}/local/dmk/bin/patroni
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_user }}"
+    state: link
+
+- name: soft link patronictl to dmk 
+  file:
+    src: /home/{{ postgres_user }}/.local/bin/patronictl
+    dest: /u01/app/{{ postgres_user }}/local/dmk/bin/patronictl
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_user }}"
+    state: link
+
+- name: get the current selinux context for Patroni
+  when: ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == "8"
+  shell: semanage fcontext --list | grep patroni  | grep u01 | grep bin_t | cat
+  register: fcontextpatroni
+
+- name: set the selinux context for Patroni
+  command: /usr/sbin/semanage fcontext -a -t bin_t /u01/app/{{ postgres_user }}/local/dmk/bin/patroni
+  when:
+    - ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == "8"
+    - fcontextpatroni.stdout == ""
+
+- name: restorecon for Patroni
+  when: ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == "8"
+  command: /sbin/restorecon -v /u01/app/{{ postgres_user }}/local/dmk/bin/patroni
+
+- name: get the current selinux context for Patroni binary
+  when: ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == "8"
+  shell: semanage fcontext --list | grep patroni  | grep home | grep bin_t | cat
+  register: fcontextpatronibin
+
+- name: set the selinux context for Patroni binary
+  command: /usr/sbin/semanage fcontext -a -t bin_t /home/postgres/.local/bin/patroni
+  when:
+    - ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == "8" or
+      ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == "8"
+    - fcontextpatronibin.stdout == ""
+
+- name: restorecon for Patroni binary
+  when: ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == "8"
+  command: /sbin/restorecon -vF /home/postgres/.local/bin/patroni
+
+- name: get patroni.yml template 
+  template:
+    src: patroni.yml.j2
+    dest: /u01/app/{{ postgres_user }}/local/dmk/etc/patroni.yml
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+    mode: 0600
+ 
+- name: Copy the patroni systemd service file
+  copy:
+    src: patroni.service
+    dest: /etc/systemd/system/patroni.service
+    owner: root
+    group: root
+    mode: 0755
+ 
+- name: force systemd to reread configs 
+  systemd:
+    daemon_reload: yes
+ 
+- name: Enable the systemd patroni service
+  systemd:
+    name: patroni
+    enabled: yes
+
+- name: Start service patroni, if not started
+  service:
+    name: patroni
+    state: started
+
+- name: Add the instance to /etc/pgtab so DMK is aware of if
+  lineinfile:
+    path: /etc/pgtab
+    line: '{{ cluster_name }}:/u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}:/u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}:5432:N'
+ 
+- name: Copy haproxy.cfg template on Debian/RHEL
+  when: ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == "10" or
+        ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == "11"
+  template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+    mode: 0600
+
+- name: Copy haproxy.cfg template on Debian/RHEL
+  when: ansible_facts['distribution'] == 'SLES' and ansible_facts['distribution_major_version'] == "15"
+  template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+    mode: 0606
+ 
+- name: Enable the systemd haproxy service
+  systemd:
+    name: haproxy
+    enabled: yes
+ 
+# we need to set this so haproxy can be started
+- name: Set selinux context for ha proxy
+  when: ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'Rocky' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'AlmaLinux' and ansible_facts['distribution_major_version'] == "8"
+  shell: setsebool -P haproxy_connect_any=1
+
+- name: Start service haproxy, if not started
+  service:
+    name: haproxy
+    state: started
+
+- name: Copy keepalived.conf template 
+  template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+    mode: 0600
+  with_items:
+    - { role: "{{ hostvars[inventory_hostname].keepalived_role }}" , priority: "{{ hostvars[inventory_hostname].keepalived_priority }}" }
+

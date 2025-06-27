@@ -1,0 +1,9 @@
+- hosts: patroni_servers
+  remote_user: postgres
+  become: yes
+  become_method: sudo
+  roles:
+      - postgresql-prerequisites
+      - postgresql-installation
+      - postgresql-dmk
+      - postgresql-patroni-installation

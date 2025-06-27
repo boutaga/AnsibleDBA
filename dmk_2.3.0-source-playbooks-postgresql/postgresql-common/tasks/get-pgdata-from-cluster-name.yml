@@ -1,0 +1,4 @@
+- name: Get PGDATA
+  shell: "cat /etc/pgtab | grep {{ cluster_name }} | awk -F ':' '{print $3}'"
+  register: pgdata
+ 

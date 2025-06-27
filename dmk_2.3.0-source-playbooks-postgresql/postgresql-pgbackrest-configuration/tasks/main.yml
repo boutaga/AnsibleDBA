@@ -1,0 +1,72 @@
+- name: Create pgbackrest.conf file on database servers
+  template:
+    src: pgbackrest.conf.j2
+    dest: "{{ local_dmk_path }}etc/pgbackrest.conf"
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+    mode: 0644
+  when: "'postgres_servers' in group_names"
+
+- name: Create pgbackrest.conf file on backup server
+  template:
+    src: pgbackrest_repo.conf.j2
+    dest: "{{ local_dmk_path }}etc/pgbackrest.conf"
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+    mode: 0644
+  when: "'backup_server' in group_names"
+
+- name: Create stanza on the backup server
+  command: "{{ product_dmk_path }}pgbackrest-current/bin/pgbackrest --stanza=\"{{ stanza }}\" --log-level-console=info --config=\"{{ local_dmk_path }}\"etc/pgbackrest.conf stanza-create"
+  become: yes
+  become_user: "{{ postgres_user }}"
+  when: "'backup_server' in group_names"
+
+- name: Adjust ARCHIVE_COMMAND
+  command: cd "{{ local_dmk_path }}etc/"
+  command: "{{ local_dmk_path }}bin/patronictl -c {{ local_dmk_path }}etc/patroni.yml edit-config --pg archive_command={{ product_dmk_path }}pgbackrest-current/bin/pgbackrest --stanza={{ stanza }} archive-push /pg_wal/%f --force"
+  become: yes
+  become_user: "{{ postgres_user }}"
+  when: "'postgres_servers' in group_names"
+
+
+- name: Perform the pgBackRest check command to validate archiving
+  command: "{{ product_dmk_path }}pgbackrest-current/bin/pgbackrest --stanza={{ stanza }} --log-level-console=info --pg-port={{ postgres_port }} --config={{ local_dmk_path }}etc/pgbackrest.conf check"
+  become: yes
+  become_user: "{{ postgres_user }}"
+  when: "'backup_server' in group_names"
+
+# Backup schedule expamples:
+
+- name: Schedule a full backup every Sunday morning at 23:00 for repo1
+  ansible.builtin.cron:
+    name: "Full backup schedule"
+    minute: "0"
+    hour: "23"
+    weekday: "sun"
+    job: "{{ product_dmk_path }}pgbackrest-current/bin/pgbackrest --stanza={{ stanza }} --log-level-console=info --config={{ local_dmk_path }}etc/pgbackrest.conf backup --type=full --repo=1"
+    user: "{{postgres_user}}"
+    disabled: no
+  when: "'backup_server' in group_names"
+
+#- name: Schedule an differential backup every day 2:00 in the morning for repo1/ZH
+#  ansible.builtin.cron:
+#    name: "Differential backup schedule"
+#    minute: "0"
+#    hour: "2"
+#    weekday: "*"
+#    job: "{{ product_dmk_path }}pgbackrest-current/bin/pgbackrest --stanza={{ stanza }} --log-level-console=info --config={{ local_dmk_path }}etc/pgbackrest.conf backup --type=diff --repo=1"
+#    user: "{{postgres_user}}"
+#    disabled: no
+#  when: "'backup_server' in group_names"
+
+#- name: Schedule an incremental backup every day 04:00 in the morning for repo2/LS
+#  ansible.builtin.cron:
+#    name: "Incremental backup to the S3 bucket in Lausanne"
+#    minute: "0"
+#    hour: "4"
+#    weekday: "*"
+#    job: "{{ product_dmk_path }}pgbackrest-current/bin/pgbackrest --stanza={{ stanza }} --log-level-console=info backup --type=incr --repo=2"
+#    user: "{{postgres_user}}"
+#    disabled: no
+#  when: "'backup_server' in group_names"

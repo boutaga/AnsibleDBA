@@ -1,0 +1,20 @@
+[patroni_servers]
+192.168.22.201 keepalived_role=MASTER keepalived_priority=102 ansible_hostname=patroni1 ansible_hostname_fqdn=patroni1.it.dbi-services.com
+192.168.22.202 keepalived_role=SLAVE keepalived_priority=101 ansible_hostname=patroni2 ansible_hostname_fqdn=patroni2.it.dbi-services.com
+192.168.22.203 keepalived_role=SLAVE keepalived_priority=100 ansible_hostname=patroni3 ansible_hostname_fqdn=patroni3.it.dbi-services.com
+
+[patroni_servers:vars]
+interface_name=enp1s0
+netmask_for_hba=192.168.100.0/24
+postgresql_version=13.1
+postgresql_major_version=13
+dmk_postgresql_version=13/db_1
+etcd_version=3.4.14
+postgres_user=postgres
+postgres_group=postgres
+dmk_version="19-04.10"
+cluster_name=PG1
+blank=' '
+virtual_ip=192.168.22.205
+timezone=Europe/Zurich
+

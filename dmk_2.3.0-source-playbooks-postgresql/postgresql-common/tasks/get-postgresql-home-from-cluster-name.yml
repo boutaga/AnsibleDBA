@@ -1,0 +1,5 @@
+- name: Get the HOME of the PostgreSQL installation
+  shell: "cat /etc/pgtab | grep {{ cluster_name }} | awk -F ':' '{print $2}'"
+  register: pg_home
+  failed_when: pg_home.stdout == ''
+ 

@@ -1,0 +1,22 @@
+- name: Check if DMK is installed
+  include_role:
+    name: postgresql-common
+    tasks_from: is-dmk-installed
+
+- name: End the playbook when DMK is not installed
+  meta: end_play
+  when: dmk_installed.stat.exists == false
+
+- name: Copy DMK source distribution
+  copy:
+    src: PostgreSQL-DMK-{{ dmk_version }}.zip
+    dest: /u01/app/{{ postgres_user }}/local/PostgreSQL-DMK-{{ dmk_version }}.zip
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+    mode: 0700
+
+- name: extract DMK
+  shell: cd /u01/app/{{ postgres_user }}/local; unzip -o PostgreSQL-DMK-{{ dmk_version }}.zip
+  become: yes
+  become_user: "{{ postgres_user }}"
+
