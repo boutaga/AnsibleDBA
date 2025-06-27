@@ -483,11 +483,337 @@ groups:
 ## 🔒 Security Considerations
 
 1. **Use dedicated monitoring user** with minimal required privileges
-2. **Secure connection strings** - avoid plain text passwords
+2. **Secure connection strings** - avoid plain text passwords (see KMS integration below)
 3. **Network security** - restrict access to exporter port (9161)
 4. **Regular password rotation** for monitoring accounts
 5. **Consider Oracle Wallet** for password-less authentication
 6. **Monitor exporter logs** for security events
+7. **🆕 External KMS Integration** - Store sensitive credentials in external Key Management Services
+
+---
+
+## 🔐 External KMS Integration (Roadmap Feature)
+
+**Status**: 📋 **Planned Feature** - Ready for implementation
+
+### Overview
+
+Integrate with external Key Management Services to securely store and retrieve Oracle database credentials, eliminating plain-text passwords from configuration files.
+
+### Supported KMS Providers
+
+#### 🏢 **Enterprise KMS Solutions**
+- **HashiCorp Vault** - Enterprise secret management
+- **AWS Secrets Manager** - Cloud-native secret storage
+- **Azure Key Vault** - Microsoft Azure secret management
+- **Google Secret Manager** - Google Cloud secret storage
+- **CyberArk Vault** - Enterprise privileged access management
+
+#### 🔧 **Implementation Approach**
+
+The KMS integration would extend the current multi-instance deployment with secure credential retrieval:
+
+```bash
+# Enhanced add command with KMS integration
+sudo ./deploy-multi.sh add prod-db1 \
+  --host oracle1.company.com \
+  --service ORCLCDB \
+  --user C##PMM \
+  --kms-provider vault \
+  --kms-path secret/oracle/prod-db1 \
+  --kms-endpoint https://vault.company.com:8200
+
+# Alternative: AWS Secrets Manager
+sudo ./deploy-multi.sh add prod-db2 \
+  --host oracle2.company.com \
+  --service PRODDB \
+  --user C##PMM \
+  --kms-provider aws-secrets \
+  --kms-secret-name oracle/prod-db2/credentials \
+  --aws-region us-east-1
+```
+
+### Configuration Examples
+
+#### **HashiCorp Vault Integration**
+
+```bash
+# connection.conf would reference KMS instead of plain passwords
+# /etc/oracledb_exporter/prod-db1/connection.conf
+KMS_PROVIDER=vault
+KMS_ENDPOINT=https://vault.company.com:8200
+KMS_PATH=secret/oracle/prod-db1
+KMS_AUTH_METHOD=token  # or: aws-iam, kubernetes, ldap
+VAULT_TOKEN_FILE=/etc/oracledb_exporter/vault-token
+ORACLE_HOST=oracle1.company.com
+ORACLE_PORT=1521
+ORACLE_SERVICE=ORCLCDB
+ORACLE_USER=C##PMM
+EXPORTER_PORT=9161
+```
+
+**Vault Secret Structure:**
+```json
+{
+  "password": "secure_oracle_password_123",
+  "wallet_password": "wallet_secret_456",
+  "ssl_cert": "-----BEGIN CERTIFICATE-----...",
+  "ssl_key": "-----BEGIN PRIVATE KEY-----..."
+}
+```
+
+#### **AWS Secrets Manager Integration**
+
+```bash
+# connection.conf for AWS Secrets Manager
+# /etc/oracledb_exporter/prod-db2/connection.conf
+KMS_PROVIDER=aws-secrets
+KMS_SECRET_NAME=oracle/prod-db2/credentials
+AWS_REGION=us-east-1
+AWS_ROLE_ARN=arn:aws:iam::123456789012:role/OracleMonitoringRole
+ORACLE_HOST=oracle2.company.com
+ORACLE_PORT=1521
+ORACLE_SERVICE=PRODDB
+ORACLE_USER=C##PMM
+EXPORTER_PORT=9162
+```
+
+**AWS Secret Structure:**
+```json
+{
+  "username": "C##PMM",
+  "password": "secure_oracle_password_456",
+  "host": "oracle2.company.com",
+  "port": "1521",
+  "service": "PRODDB"
+}
+```
+
+#### **Azure Key Vault Integration**
+
+```bash
+# connection.conf for Azure Key Vault
+# /etc/oracledb_exporter/prod-db3/connection.conf
+KMS_PROVIDER=azure-keyvault
+KMS_VAULT_URL=https://oracle-secrets.vault.azure.net/
+KMS_SECRET_NAME=oracle-prod-db3-password
+AZURE_CLIENT_ID=12345678-1234-1234-1234-123456789012
+AZURE_TENANT_ID=87654321-4321-4321-4321-210987654321
+ORACLE_HOST=oracle3.company.com
+ORACLE_PORT=1521
+ORACLE_SERVICE=PRODDB
+ORACLE_USER=C##PMM
+EXPORTER_PORT=9163
+```
+
+### Enhanced SystemD Service Template
+
+The systemd template would be enhanced to support KMS credential retrieval:
+
+```ini
+# /etc/systemd/system/oracledb_exporter@.service
+[Unit]
+Description=Prometheus Oracle DB Exporter for %i with KMS Integration
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=sql_exporter
+Group=sql_exporter
+Type=simple
+Restart=on-failure
+RestartSec=5
+
+# Instance-specific configuration directory
+EnvironmentFile=/etc/oracledb_exporter/%i/connection.conf
+
+# KMS credential resolution script
+ExecStartPre=/usr/local/bin/oracle-kms-resolver %i
+ExecStart=/usr/local/bin/oracledb_exporter \
+  --web.listen-address=":${EXPORTER_PORT}" \
+  --custom.metrics="/etc/oracledb_exporter/%i/custom-metrics.toml" \
+  --default.metrics=true \
+  --log.level=info
+
+# Enhanced security for KMS access
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/tmp /var/lib/oracledb_exporter
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### KMS Authentication Methods
+
+#### **HashiCorp Vault**
+```bash
+# Token-based authentication
+VAULT_TOKEN=hvs.abcdef123456...
+
+# AWS IAM authentication
+VAULT_AUTH_AWS_ROLE=oracle-monitoring
+VAULT_AUTH_AWS_IAM=true
+
+# Kubernetes service account
+VAULT_AUTH_K8S_ROLE=oracle-exporter
+VAULT_AUTH_K8S_SA_TOKEN_PATH=/var/run/secrets/kubernetes.io/serviceaccount/token
+```
+
+#### **AWS Secrets Manager**
+```bash
+# IAM Role-based (recommended)
+AWS_ROLE_ARN=arn:aws:iam::123456789012:role/OracleMonitoringRole
+
+# Instance profile (for EC2)
+# Automatically uses EC2 instance IAM role
+
+# Access keys (not recommended for production)
+AWS_ACCESS_KEY_ID=AKIA...
+AWS_SECRET_ACCESS_KEY=...
+```
+
+#### **Azure Key Vault**
+```bash
+# Managed Identity (recommended)
+AZURE_USE_MANAGED_IDENTITY=true
+
+# Service Principal
+AZURE_CLIENT_ID=12345678-1234-1234-1234-123456789012
+AZURE_CLIENT_SECRET=...
+AZURE_TENANT_ID=87654321-4321-4321-4321-210987654321
+
+# Certificate-based authentication
+AZURE_CLIENT_CERTIFICATE_PATH=/etc/ssl/certs/azure-client.pem
+```
+
+### Implementation Benefits
+
+#### **🔒 Security Enhancements**
+- **Zero Plain-Text Passwords**: No credentials stored in config files
+- **Centralized Secret Management**: Single source of truth for all credentials
+- **Audit Trails**: Complete access logging for all secret retrievals
+- **Automatic Rotation**: Support for automatic password rotation
+- **Fine-Grained Access**: KMS-level access controls and policies
+
+#### **🏢 Enterprise Features**
+- **Compliance Ready**: Meets enterprise security and compliance requirements
+- **Multi-Environment**: Different KMS backends for dev/test/prod
+- **Disaster Recovery**: KMS replication and backup strategies
+- **Integration Ready**: Works with existing enterprise KMS infrastructure
+
+#### **⚡ Operational Benefits**
+- **Simplified Deployment**: No manual password management
+- **Reduced Risk**: Eliminates credential exposure in logs/configs
+- **Automated Updates**: Credentials can be rotated without service restarts
+- **Monitoring Integration**: KMS access metrics and alerting
+
+### Proposed File Structure with KMS
+
+```
+/etc/oracledb_exporter/
+├── instances.conf                     # Instance registry
+├── custom-metrics-template.toml       # Template for new instances
+├── kms/
+│   ├── vault-config.json             # Vault configuration
+│   ├── aws-config.json               # AWS Secrets Manager config  
+│   ├── azure-config.json             # Azure Key Vault config
+│   └── tokens/                       # Temporary token storage
+│       ├── vault-token
+│       └── aws-session-token
+├── prod-db1/
+│   ├── connection.conf               # KMS-enabled connection config
+│   └── custom-metrics.toml           # Instance-specific metrics
+├── prod-db2/
+│   ├── connection.conf               # AWS Secrets Manager config
+│   └── custom-metrics.toml
+└── prod-db3/
+    ├── connection.conf               # Azure Key Vault config
+    └── custom-metrics.toml
+```
+
+### Enhanced Management Commands
+
+```bash
+# KMS-enabled instance management
+sudo ./deploy-multi.sh setup --kms-provider vault --vault-endpoint https://vault.company.com:8200
+
+# Add instance with Vault integration
+sudo ./deploy-multi.sh add prod-db1 \
+  --host oracle1.company.com \
+  --service ORCLCDB \
+  --user C##PMM \
+  --kms-provider vault \
+  --kms-path secret/oracle/prod-db1
+
+# Test KMS connectivity
+./deploy-multi.sh test-kms prod-db1
+
+# Rotate credentials (triggers KMS refresh)
+sudo ./deploy-multi.sh rotate-secrets prod-db1
+
+# KMS status and health
+./deploy-multi.sh kms-status
+```
+
+### Implementation Timeline
+
+#### **Phase 1: Core KMS Integration** (4-6 weeks)
+- [ ] HashiCorp Vault integration
+- [ ] Enhanced systemd template with KMS support
+- [ ] Credential resolution script (`oracle-kms-resolver`)
+- [ ] Basic authentication methods (token, AWS IAM)
+
+#### **Phase 2: Multi-Provider Support** (6-8 weeks)
+- [ ] AWS Secrets Manager integration
+- [ ] Azure Key Vault integration
+- [ ] Google Secret Manager integration
+- [ ] Enhanced management commands
+
+#### **Phase 3: Enterprise Features** (4-6 weeks)
+- [ ] Automatic credential rotation
+- [ ] Advanced authentication methods
+- [ ] KMS health monitoring and alerting
+- [ ] Comprehensive documentation and examples
+
+#### **Phase 4: Advanced Integration** (2-4 weeks)
+- [ ] Prometheus metrics for KMS operations
+- [ ] Grafana dashboards for KMS monitoring
+- [ ] Integration with Oracle Wallet
+- [ ] SSL/TLS certificate management via KMS
+
+### Prerequisites for KMS Integration
+
+1. **KMS Infrastructure**: Access to one or more supported KMS providers
+2. **Network Connectivity**: Monitoring server must reach KMS endpoints
+3. **Authentication Setup**: Appropriate roles, policies, and permissions
+4. **Monitoring Integration**: KMS access monitoring and alerting
+
+### Migration Path
+
+For existing deployments, migration to KMS would be seamless:
+
+```bash
+# Step 1: Enable KMS for existing instance
+sudo ./deploy-multi.sh enable-kms prod-db1 --kms-provider vault --kms-path secret/oracle/prod-db1
+
+# Step 2: Store existing password in KMS
+vault kv put secret/oracle/prod-db1 password="current_password_123"
+
+# Step 3: Test KMS integration
+./deploy-multi.sh test-kms prod-db1
+
+# Step 4: Restart with KMS enabled
+sudo ./deploy-multi.sh restart prod-db1
+
+# Step 5: Verify KMS operation
+./deploy-multi.sh status prod-db1
+./deploy-multi.sh logs prod-db1
+```
+
+This KMS integration would significantly enhance the security posture of the Oracle monitoring solution while maintaining the ease of use and management capabilities of the multi-instance deployment approach.
 
 ## 🎯 Integration with PMM
 
