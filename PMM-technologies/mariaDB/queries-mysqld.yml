@@ -1,0 +1,116 @@
+# MariaDB Custom Metrics for PMM 3.x
+# Place this file in: /usr/local/percona/pmm2/collectors/custom-queries/mysql/high-resolution/
+# File format compatible with PMM 3.x mysql_exporter custom queries
+
+# Basic table statistics
+mariadb_table_stats:
+  query: "SELECT table_schema, table_name, table_rows, data_length, index_length FROM information_schema.tables WHERE table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')"
+  metrics:
+    - table_rows:
+        usage: "GAUGE"
+        description: "Number of rows in table"
+    - data_length:
+        usage: "GAUGE"  
+        description: "Data length in bytes"
+    - index_length:
+        usage: "GAUGE"
+        description: "Index length in bytes"
+
+# Connection monitoring
+mariadb_connection_stats:
+  query: "SELECT variable_name, variable_value FROM information_schema.global_status WHERE variable_name IN ('Connections', 'Max_used_connections', 'Threads_connected', 'Threads_running', 'Aborted_connects')"
+  metrics:
+    - variable_value:
+        usage: "GAUGE"
+        description: "MariaDB connection statistics"
+
+# InnoDB buffer pool utilization
+mariadb_innodb_buffer_pool:
+  query: "SELECT variable_name, variable_value FROM information_schema.global_status WHERE variable_name LIKE 'Innodb_buffer_pool_%'"
+  metrics:
+    - variable_value:
+        usage: "GAUGE"
+        description: "InnoDB buffer pool metrics"
+
+# Replication lag (for slave instances)
+mariadb_slave_lag:
+  query: "SHOW SLAVE STATUS"
+  metrics:
+    - Seconds_Behind_Master:
+        usage: "GAUGE"
+        description: "Seconds behind master in replication"
+    - Slave_IO_Running:
+        usage: "LABEL"
+        description: "IO thread status"
+    - Slave_SQL_Running:
+        usage: "LABEL"  
+        description: "SQL thread status"
+
+# Query performance metrics
+mariadb_query_response_time:
+  query: "SELECT count, total, time FROM information_schema.query_response_time WHERE time != 'TOO LONG'"
+  metrics:
+    - count:
+        usage: "COUNTER"
+        description: "Number of queries in time bucket"
+    - total:
+        usage: "COUNTER"
+        description: "Total time for queries in bucket"
+
+# Binary log status
+mariadb_binlog_status:
+  query: "SHOW MASTER STATUS"
+  metrics:
+    - Position:
+        usage: "GAUGE"
+        description: "Current binlog position"
+
+# Galera cluster metrics (if using Galera)
+mariadb_galera_cluster:
+  query: "SELECT variable_name, variable_value FROM information_schema.global_status WHERE variable_name LIKE 'wsrep_%' AND variable_name IN ('wsrep_cluster_size', 'wsrep_local_state', 'wsrep_ready', 'wsrep_connected')"
+  metrics:
+    - variable_value:
+        usage: "GAUGE"
+        description: "Galera cluster status metrics"
+
+# Storage engine statistics
+mariadb_storage_engines:
+  query: "SELECT engine, support, transactions, xa, savepoints FROM information_schema.engines"
+  metrics:
+    - support:
+        usage: "LABEL"
+        description: "Storage engine support status"
+    - transactions:
+        usage: "LABEL"
+        description: "Transaction support"
+    - xa:
+        usage: "LABEL"
+        description: "XA transaction support"
+
+# Thread pool statistics (MariaDB specific)
+mariadb_thread_pool:
+  query: "SELECT variable_name, variable_value FROM information_schema.global_status WHERE variable_name LIKE 'Threadpool_%'"
+  metrics:
+    - variable_value:
+        usage: "GAUGE"
+        description: "Thread pool statistics"
+
+# User connection statistics
+mariadb_user_statistics:
+  query: "SELECT user, total_connections, concurrent_connections, connected_time, busy_time, cpu_time FROM information_schema.user_statistics"
+  metrics:
+    - total_connections:
+        usage: "COUNTER"
+        description: "Total connections per user"
+    - concurrent_connections:
+        usage: "GAUGE"
+        description: "Current concurrent connections per user"
+    - connected_time:
+        usage: "COUNTER"
+        description: "Total connected time per user"
+    - busy_time:
+        usage: "COUNTER"
+        description: "Total busy time per user"
+    - cpu_time:
+        usage: "COUNTER"
+        description: "Total CPU time per user"
