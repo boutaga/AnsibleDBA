@@ -1,13 +1,33 @@
 #!/bin/bash
 # MariaDB specific checks
 
-# Try to find MariaDB binary in common locations
+# Use configured paths from main script, or defaults if not set
+MARIADB_BIN_PATHS=(
+  "${MARIADB_BASE_PATHS[@]:-/usr/bin /usr/local/bin /opt/mariadb/bin /u01/app/mariadb/product /u01/app/mariadb/bin}"
+)
+
+MARIADB_SEARCH_DATA_PATHS=(
+  "${MARIADB_DATA_PATHS[@]:-/var/lib/mysql /usr/local/mariadb/data /opt/mariadb/data /u02/mariadb}"
+)
+
+# Try to find MariaDB binary in configured locations
 MARIADB_CMD=""
-for mariadb_path in "/usr/bin/mariadb" "/usr/local/bin/mariadb" "/opt/mariadb/bin/mariadb" "/u01/app/mariadb/bin/mariadb" "/usr/bin/mysql" "/usr/local/bin/mysql" "/opt/mysql/bin/mysql"; do
-  if [ -x "$mariadb_path" ]; then
-    MARIADB_CMD="$mariadb_path"
-    break
-  fi
+for base_path in "${MARIADB_BIN_PATHS[@]}"; do
+  # Direct binary check (prefer mariadb over mysql)
+  for mariadb_binary in "$base_path/mariadb" "$base_path/mysql" "$base_path/bin/mariadb" "$base_path/bin/mysql"; do
+    if [ -x "$mariadb_binary" ]; then
+      MARIADB_CMD="$mariadb_binary"
+      break 2
+    fi
+  done
+  
+  # OFA-style version paths like /u01/app/mariadb/product/10.11/db_1/bin/mariadb
+  for version_path in "$base_path"/{10.*,11.*}/db_*/bin/{mariadb,mysql}; do
+    if [ -x "$version_path" ]; then
+      MARIADB_CMD="$version_path"
+      break 2
+    fi
+  done
 done
 
 # Fallback to PATH
@@ -15,24 +35,87 @@ if [ -z "$MARIADB_CMD" ]; then
   MARIADB_CMD="$(command -v mariadb 2>/dev/null || command -v mysql 2>/dev/null || true)"
 fi
 
+# Function to discover MariaDB data directories
+mariadb_find_datadirs() {
+  local datadirs=()
+  
+  # Method 1: Get from running MariaDB instance
+  if [ -n "$MARIADB_CMD" ]; then
+    local running_datadir=$(mariadb_exec "SELECT @@datadir;" 2>/dev/null | tail -n +2 | tr -d ' ')
+    [ -n "$running_datadir" ] && datadirs+=("$running_datadir")
+  fi
+  
+  # Method 2: Check process list for --datadir
+  if command -v ps >/dev/null 2>&1; then
+    local proc_datadirs=$(ps aux | grep -E '(mariadbd|mysqld).*--datadir' | grep -v grep | sed -n 's/.*--datadir[= ]\([^ ]*\).*/\1/p' | sort -u)
+    for datadir in $proc_datadirs; do
+      [ -d "$datadir" ] && datadirs+=("$datadir")
+    done
+  fi
+  
+  # Method 3: Search configured data paths
+  for data_path in "${MARIADB_SEARCH_DATA_PATHS[@]}"; do
+    if [ -d "$data_path" ]; then
+      datadirs+=("$data_path")
+      
+      # Look for version-specific subdirectories
+      for version_dir in "$data_path"/{10.*,11.*}; do
+        [ -d "$version_dir" ] && datadirs+=("$version_dir")
+      done
+      
+      # Look for alias-based directories
+      for alias_dir in "$data_path"/{db_*,main,primary,mariadb*,galera*}; do
+        [ -d "$alias_dir" ] && datadirs+=("$alias_dir")
+      done
+    fi
+  done
+  
+  # Remove duplicates and print
+  printf '%s\n' "${datadirs[@]}" | sort -u
+}
+
 # Function to get MariaDB connection parameters
 mariadb_get_connection() {
   local conn_opts=""
   
-  # Try default socket locations
-  for socket in "/var/lib/mysql/mysql.sock" "/tmp/mysql.sock" "/var/run/mysqld/mysqld.sock" "/u01/mariadb/mysql.sock"; do
+  # Method 1: Try to get socket from running instance
+  if [ -n "$MARIADB_CMD" ]; then
+    local running_socket=$(mariadb_exec "SELECT @@socket;" 2>/dev/null | tail -n +2 | tr -d ' ')
+    if [ -n "$running_socket" ] && [ -S "$running_socket" ]; then
+      conn_opts="--socket=$running_socket"
+      echo "$conn_opts"
+      return
+    fi
+  fi
+  
+  # Method 2: Try common socket locations
+  local socket_paths=(
+    "/var/lib/mysql/mysql.sock"
+    "/tmp/mysql.sock"
+    "/var/run/mysqld/mysqld.sock"
+    "/u01/mariadb/mysql.sock"
+    "/u02/mariadb/mysql.sock"
+  )
+  
+  for socket in "${socket_paths[@]}"; do
     if [ -S "$socket" ]; then
       conn_opts="--socket=$socket"
-      break
+      echo "$conn_opts"
+      return
     fi
   done
   
-  # If no socket found, try TCP connection
-  if [ -z "$conn_opts" ]; then
-    conn_opts="--host=localhost --port=3306"
-  fi
+  # Method 3: Try TCP connection with custom ports
+  for port in 3306 3307 3308; do
+    if netstat -ln 2>/dev/null | grep -q ":$port "; then
+      conn_opts="--host=localhost --port=$port"
+      echo "$conn_opts"
+      return
+    fi
+  done
   
-  echo "$conn_opts"
+  # Fallback
+  echo "--host=localhost --port=3306"
 }
 
 # Function to execute MariaDB commands with proper authentication

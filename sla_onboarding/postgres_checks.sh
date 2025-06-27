@@ -1,6 +1,11 @@
 #!/bin/bash
 # PostgreSQL specific checks derived from pg_dbaOverview.sh
 
+# Use configured paths from main script, or defaults if not set
+PG_SEARCH_PATHS=(
+  "${PG_BASE_PATHS[@]:-/var/lib/postgresql /usr/local/pgsql /opt/postgresql /u01/app/postgres/product /u02/pgdata}"
+)
+
 # Dynamic discovery of PostgreSQL installations
 pg_find_clusters() {
   local confs=()
@@ -17,25 +22,46 @@ pg_find_clusters() {
   if command -v systemctl >/dev/null 2>&1; then
     local services=$(systemctl list-units --type=service | grep postgres | awk '{print $1}')
     for service in $services; do
-      local datadir=$(systemctl show "$service" -p Environment | grep -o 'PGDATA=[^[:space:]]*' | cut -d= -f2)
+      local datadir=$(systemctl show "$service" -p Environment 2>/dev/null | grep -o 'PGDATA=[^[:space:]]*' | cut -d= -f2)
       [ -n "$datadir" ] && [ -f "$datadir/postgresql.conf" ] && confs+=("$datadir/postgresql.conf")
     done
   fi
   
-  # Method 3: Standard locations as fallback
-  local standard_dirs=("/var/lib/postgresql" "/usr/local/pgsql" "/opt/postgresql" "/u01/pgdata" "/u02/pgdata")
-  for d in "${standard_dirs[@]}"; do
-    [ -d "$d" ] && confs+=( $(find "$d" -type f -name postgresql.conf 2>/dev/null) )
+  # Method 3: Search configured paths for PostgreSQL installations
+  for base_path in "${PG_SEARCH_PATHS[@]}"; do
+    if [ -d "$base_path" ]; then
+      # Look for OFA-style paths like /u01/app/postgres/product/17/db_1
+      confs+=( $(find "$base_path" -type f -name postgresql.conf 2>/dev/null) )
+      
+      # Look for version-specific directories
+      for version_dir in "$base_path"/{9.*,1[0-9],1[0-9].*}; do
+        [ -d "$version_dir" ] && confs+=( $(find "$version_dir" -type f -name postgresql.conf 2>/dev/null) )
+      done
+      
+      # Look for alias-based directories (db_1, main, primary, etc.)
+      for alias_dir in "$base_path"/{db_*,main,primary,master,slave*,standby*}; do
+        [ -d "$alias_dir" ] && confs+=( $(find "$alias_dir" -type f -name postgresql.conf 2>/dev/null) )
+      done
+    fi
   done
   
-  # Method 4: Check common PostgreSQL binary locations and ask them
-  local pg_binaries=("/usr/bin/postgres" "/usr/local/bin/postgres" "/opt/postgresql/bin/postgres" "/u01/app/postgresql/bin/postgres")
-  for binary in "${pg_binaries[@]}"; do
-    if [ -x "$binary" ]; then
-      # Try to get default data directory from binary
-      local default_datadir=$("$binary" --help 2>/dev/null | grep -E 'default.*data.*directory' | sed -n 's/.*default.*data.*directory.*\([^[:space:]]*\).*/\1/p')
-      [ -n "$default_datadir" ] && [ -f "$default_datadir/postgresql.conf" ] && confs+=("$default_datadir/postgresql.conf")
-    fi
+  # Method 4: Check for PostgreSQL binaries and ask them for default paths
+  local pg_binary_paths=(
+    "/usr/bin/postgres" 
+    "/usr/local/bin/postgres" 
+    "/opt/postgresql/bin/postgres"
+    "/u01/app/postgres/product/*/db_*/bin/postgres"
+    "/u01/app/postgres/bin/postgres"
+  )
+  
+  for pattern in "${pg_binary_paths[@]}"; do
+    for binary in $pattern; do
+      if [ -x "$binary" ]; then
+        # Try to get default data directory from binary
+        local default_datadir=$("$binary" --help 2>/dev/null | grep -E 'default.*data.*directory' | sed -n 's/.*default.*data.*directory.*\([^[:space:]]*\).*/\1/p')
+        [ -n "$default_datadir" ] && [ -f "$default_datadir/postgresql.conf" ] && confs+=("$default_datadir/postgresql.conf")
+      fi
+    done
   done
   
   # Remove duplicates and print

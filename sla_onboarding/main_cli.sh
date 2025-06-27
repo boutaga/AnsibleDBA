@@ -4,10 +4,63 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Load custom configuration if it exists
+if [ -f "$SCRIPT_DIR/config.sh" ]; then
+  echo "Loading custom configuration from $SCRIPT_DIR/config.sh"
+  source "$SCRIPT_DIR/config.sh"
+fi
+
 # Output format variables
 FORMAT="txt"
 OUTPUT_FILE=""
 REPORT=()
+
+# =============================================================================
+# CUSTOMIZABLE PATH VARIABLES - Modify these for your environment
+# =============================================================================
+
+# PostgreSQL paths (OFA-style: /u01/app/postgres/product/MAJOR/db_MINOR)
+export PG_BASE_PATHS=(
+  "/var/lib/postgresql"           # Standard Debian/Ubuntu
+  "/usr/local/pgsql"             # Standard source install
+  "/opt/postgresql"              # Standard RPM install
+  "/u01/app/postgres/product"    # OFA base path
+  "/u02/pgdata"                  # OFA data path
+)
+
+# MySQL paths
+export MYSQL_BASE_PATHS=(
+  "/usr/bin"                     # Standard package install
+  "/usr/local/bin"               # Standard source install
+  "/opt/mysql/bin"               # Standard MySQL install
+  "/u01/app/mysql/product"       # OFA base path
+  "/u01/app/mysql/bin"           # OFA binary path
+)
+
+export MYSQL_DATA_PATHS=(
+  "/var/lib/mysql"               # Standard package data
+  "/usr/local/mysql/data"        # Standard source data
+  "/opt/mysql/data"              # Standard MySQL data
+  "/u02/mysql"                   # OFA data path
+)
+
+# MariaDB paths
+export MARIADB_BASE_PATHS=(
+  "/usr/bin"                     # Standard package install
+  "/usr/local/bin"               # Standard source install
+  "/opt/mariadb/bin"             # Standard MariaDB install
+  "/u01/app/mariadb/product"     # OFA base path
+  "/u01/app/mariadb/bin"         # OFA binary path
+)
+
+export MARIADB_DATA_PATHS=(
+  "/var/lib/mysql"               # Standard package data
+  "/usr/local/mariadb/data"      # Standard source data
+  "/opt/mariadb/data"            # Standard MariaDB data
+  "/u02/mariadb"                 # OFA data path
+)
+
+# =============================================================================
 
 source "$SCRIPT_DIR/os_checks.sh"
 source "$SCRIPT_DIR/postgres_checks.sh"
