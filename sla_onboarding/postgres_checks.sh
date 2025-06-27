@@ -126,3 +126,81 @@ pg_db_sizes() {
   done
 }
 
+pg_config_files() {
+  echo "---- PostgreSQL Configuration Files ----"
+  local confs
+  mapfile -t confs < <(pg_find_clusters)
+  for conf in "${confs[@]}"; do
+    local dir=$(dirname "$conf")
+    local name=$(basename "$dir")
+    echo "$name Config Files:"
+    echo "  postgresql.conf: $conf ($(stat -c%Y "$conf" 2>/dev/null | xargs -I{} date -d @{} '+%Y-%m-%d %H:%M' || echo 'stat failed'))"
+    [ -f "$dir/pg_hba.conf" ] && echo "  pg_hba.conf: $dir/pg_hba.conf ($(stat -c%Y "$dir/pg_hba.conf" 2>/dev/null | xargs -I{} date -d @{} '+%Y-%m-%d %H:%M' || echo 'stat failed'))"
+    [ -f "$dir/pg_ident.conf" ] && echo "  pg_ident.conf: $dir/pg_ident.conf"
+    [ -f "$dir/recovery.conf" ] && echo "  recovery.conf: $dir/recovery.conf"
+    [ -f "$dir/postgresql.auto.conf" ] && echo "  postgresql.auto.conf: $dir/postgresql.auto.conf"
+  done
+}
+
+pg_extensions() {
+  echo "---- PostgreSQL Extensions ----"
+  local confs
+  mapfile -t confs < <(pg_find_clusters)
+  for conf in "${confs[@]}"; do
+    local dir=$(dirname "$conf")
+    local port=$(pg_get_port "$dir")
+    local name=$(basename "$dir")
+    local status=$(pg_is_cluster_running "$dir")
+    if [ "$status" = "online" ] && command -v psql >/dev/null; then
+      echo "$name Extensions:"
+      psql -h localhost -p "$port" -d postgres -c "SELECT name, default_version, installed_version FROM pg_available_extensions WHERE installed_version IS NOT NULL ORDER BY name;" 2>/dev/null || echo "  Unable to connect"
+    else
+      echo "$name: offline or psql not available"
+    fi
+  done
+}
+
+pg_users_databases() {
+  echo "---- PostgreSQL Users & Databases ----"
+  local confs
+  mapfile -t confs < <(pg_find_clusters)
+  for conf in "${confs[@]}"; do
+    local dir=$(dirname "$conf")
+    local port=$(pg_get_port "$dir")
+    local name=$(basename "$dir")
+    local status=$(pg_is_cluster_running "$dir")
+    if [ "$status" = "online" ] && command -v psql >/dev/null; then
+      echo "$name Databases:"
+      psql -h localhost -p "$port" -d postgres -c "SELECT datname, pg_size_pretty(pg_database_size(datname)) as size FROM pg_database WHERE datname NOT IN ('template0','template1') ORDER BY pg_database_size(datname) DESC;" 2>/dev/null || echo "  Unable to connect"
+      echo "$name Users:"
+      psql -h localhost -p "$port" -d postgres -c "SELECT rolname, rolsuper, rolcreaterole, rolcreatedb, rolcanlogin FROM pg_roles WHERE rolname NOT LIKE 'pg_%' ORDER BY rolname;" 2>/dev/null || echo "  Unable to connect"
+    else
+      echo "$name: offline or psql not available"
+    fi
+  done
+}
+
+pg_backup_config() {
+  echo "---- PostgreSQL Backup Configuration ----"
+  local confs
+  mapfile -t confs < <(pg_find_clusters)
+  for conf in "${confs[@]}"; do
+    local dir=$(dirname "$conf")
+    local name=$(basename "$dir")
+    echo "$name Backup Settings:"
+    # Check WAL archiving
+    grep -E '^archive_mode|^archive_command|^wal_level' "$conf" 2>/dev/null | sed 's/^/  /' || echo "  No archive settings found"
+    # Check for common backup directories
+    for backup_dir in "/backup" "/var/backups" "/opt/backup" "$dir/backup" "/backups"; do
+      if [ -d "$backup_dir" ]; then
+        echo "  Backup directory found: $backup_dir"
+        ls -la "$backup_dir" 2>/dev/null | head -3 | sed 's/^/    /'
+      fi
+    done
+    # Check for backup scripts
+    for script in "/usr/local/bin/pg_backup.sh" "/opt/backup/pg_backup.sh" "$dir/backup.sh"; do
+      [ -f "$script" ] && echo "  Backup script found: $script"
+    done
+  done
+}
+

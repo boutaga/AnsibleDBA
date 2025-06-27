@@ -85,9 +85,19 @@ fi
 override_echo
 
 # Run selected checks
-$run_os && os_summary
+if $run_os; then
+  os_summary
+  os_security
+  os_storage
+  os_services
+  os_patches
+fi
 if $run_postgres; then
   pg_summary
+  pg_config_files
+  pg_extensions
+  pg_users_databases
+  pg_backup_config
   pg_memory
   pg_disk
   pg_replication
@@ -96,6 +106,10 @@ if $run_postgres; then
 fi
 if $run_mysql; then
   mysql_summary
+  mysql_users_security
+  mysql_replication
+  mysql_config_files
+  mysql_storage_engines
   mysql_memory
   mysql_show_config
   mysql_db_sizes
@@ -103,6 +117,10 @@ if $run_mysql; then
 fi
 if $run_mariadb; then
   mariadb_summary
+  mariadb_cluster_status
+  mariadb_plugins
+  mariadb_config_files
+  mariadb_users_security
   mariadb_memory
   mariadb_show_config
   mariadb_db_sizes
