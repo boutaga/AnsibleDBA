@@ -488,7 +488,10 @@ groups:
 4. **Regular password rotation** for monitoring accounts
 5. **Consider Oracle Wallet** for password-less authentication
 6. **Monitor exporter logs** for security events
-7. **🆕 External KMS Integration** - Store sensitive credentials in external Key Management Services
+
+## Not released yet :    
+
+**🆕 External KMS Integration** - Store sensitive credentials in external Key Management Services
 
 ---
 
@@ -760,25 +763,25 @@ sudo ./deploy-multi.sh rotate-secrets prod-db1
 
 ### Implementation Timeline
 
-#### **Phase 1: Core KMS Integration** (4-6 weeks)
+#### **Phase 1: Core KMS Integration** 
 - [ ] HashiCorp Vault integration
 - [ ] Enhanced systemd template with KMS support
 - [ ] Credential resolution script (`oracle-kms-resolver`)
 - [ ] Basic authentication methods (token, AWS IAM)
 
-#### **Phase 2: Multi-Provider Support** (6-8 weeks)
+#### **Phase 2: Multi-Provider Support** 
 - [ ] AWS Secrets Manager integration
 - [ ] Azure Key Vault integration
 - [ ] Google Secret Manager integration
 - [ ] Enhanced management commands
 
-#### **Phase 3: Enterprise Features** (4-6 weeks)
+#### **Phase 3: Enterprise Features** 
 - [ ] Automatic credential rotation
 - [ ] Advanced authentication methods
 - [ ] KMS health monitoring and alerting
 - [ ] Comprehensive documentation and examples
 
-#### **Phase 4: Advanced Integration** (2-4 weeks)
+#### **Phase 4: Advanced Integration** 
 - [ ] Prometheus metrics for KMS operations
 - [ ] Grafana dashboards for KMS monitoring
 - [ ] Integration with Oracle Wallet
