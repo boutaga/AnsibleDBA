@@ -2,6 +2,8 @@
 
 This directory contains a complete setup for monitoring Oracle Database with Prometheus and PMM (Percona Monitoring and Management), including custom metrics specifically designed for Oracle enterprise features.
 
+**🆕 Multi-Instance Support**: This solution now supports deploying multiple Oracle exporters on a single monitoring server, each targeting different remote Oracle instances.
+
 ## 🎯 Overview
 
 This monitoring solution provides comprehensive Oracle Database metrics including:
@@ -17,23 +19,171 @@ This monitoring solution provides comprehensive Oracle Database metrics includin
 
 | File | Description |
 |------|-------------|
-| `custom-metrics.toml` | Custom Oracle metrics configuration with your specific queries |
-| `deploy.sh` | Automated deployment script for Oracle exporter |
-| `oracledb_exporter.service` | Systemd service configuration |
+| `deploy.sh` | Single-instance deployment script (legacy) |
+| `deploy-multi.sh` | **Multi-instance deployment and management script** |
+| `oracledb_exporter.service` | Single-instance systemd service (legacy) |
+| `oracledb_exporter@.service` | **Systemd template service for multi-instance** |
+| `custom-metrics.toml` | Custom Oracle metrics configuration template |
 | `config-template.env` | Configuration template with examples |
-| `oracle.collector.yml` | Prometheus scraping configuration |
+| `oracle.collector.yml` | Single-instance Prometheus configuration |
+| `prometheus-multi-instance.yml` | **Multi-instance Prometheus configuration** |
+| `validate-setup.sh` | Setup validation script |
 | `README.md` | This documentation |
 | `PMM - Oracle Exporter DEV.md` | Detailed development documentation |
 | `PMM - Oracle exporter metrics details.md` | Standard metrics reference |
 
 ## 🚀 Quick Start
 
+Choose your deployment approach:
+
+- **[Single Instance](#single-instance-deployment)** - One exporter for one Oracle database
+- **[Multi-Instance](#multi-instance-deployment)** - Multiple exporters on one monitoring server ⭐ **Recommended**
+
 ### Prerequisites
 
-1. **Oracle Database** running and accessible
-2. **Oracle monitoring user** with appropriate privileges
-3. **Oracle Instant Client** (optional - some exporters use pure Go drivers)
-4. **Prometheus** server to scrape metrics
+1. **Oracle Database(s)** running and accessible remotely
+2. **Oracle monitoring user** with appropriate privileges on each database
+3. **Dedicated monitoring server** (for multi-instance deployment)
+4. **Oracle Instant Client** (optional - exporters can use pure Go drivers)
+5. **Prometheus** server to scrape metrics
+
+---
+
+## 🔥 Multi-Instance Deployment (Recommended)
+
+Deploy multiple Oracle exporters on a single dedicated monitoring server, each targeting different remote Oracle instances.
+
+### ✅ Advantages
+
+- **Centralized Monitoring**: All Oracle exporters on one server
+- **Resource Efficiency**: Shared binary, single server maintenance  
+- **Easy Management**: Unified management interface for all instances
+- **Port Management**: Automatic port assignment and conflict prevention
+- **Independent Scaling**: Add/remove instances without affecting others
+- **Security**: No need to install exporters on database servers
+- **Network Efficiency**: Single monitoring server for Prometheus to scrape
+
+### Step 1: Initial Setup
+
+```bash
+# Make script executable
+chmod +x deploy-multi.sh
+
+# Install base system (binary, user, systemd template)
+sudo ./deploy-multi.sh setup
+```
+
+### Step 2: Add Oracle Instances
+
+```bash
+# Add production databases
+sudo ./deploy-multi.sh add prod-db1 \
+  --host oracle1.company.com \
+  --service ORCLCDB \
+  --user C##PMM \
+  --password secure_password_123
+
+sudo ./deploy-multi.sh add prod-db2 \
+  --host oracle2.company.com \
+  --port 1522 \
+  --service PRODDB \
+  --user C##PMM \
+  --password secure_password_456
+
+# Add test database
+sudo ./deploy-multi.sh add test-db1 \
+  --host oracle-test.company.com \
+  --service TESTDB \
+  --user monitoring_user \
+  --password test_password
+```
+
+### Step 3: Manage Instances
+
+```bash
+# List all configured instances
+./deploy-multi.sh list
+
+# Start specific instance
+sudo ./deploy-multi.sh start prod-db1
+
+# Check status
+./deploy-multi.sh status prod-db1
+
+# View logs
+./deploy-multi.sh logs prod-db1
+
+# Start all instances
+sudo ./deploy-multi.sh start prod-db1
+sudo ./deploy-multi.sh start prod-db2
+sudo ./deploy-multi.sh start test-db1
+```
+
+### Step 4: Configure Prometheus
+
+Use the multi-instance Prometheus configuration:
+
+```yaml
+# Copy from prometheus-multi-instance.yml
+scrape_configs:
+  - job_name: 'oracle_production'
+    static_configs:
+      - targets: 
+          - 'monitoring-server:9161'  # prod-db1
+          - 'monitoring-server:9162'  # prod-db2
+    scrape_interval: 30s
+    
+  - job_name: 'oracle_development'
+    static_configs:
+      - targets:
+          - 'monitoring-server:9163'  # test-db1
+    scrape_interval: 60s
+```
+
+### Multi-Instance Management Commands
+
+```bash
+# Instance Management
+./deploy-multi.sh list                    # List all instances
+./deploy-multi.sh status [instance]       # Show status (all or specific)
+./deploy-multi.sh start <instance>        # Start instance
+./deploy-multi.sh stop <instance>         # Stop instance  
+./deploy-multi.sh restart <instance>      # Restart instance
+./deploy-multi.sh logs <instance>         # View logs
+./deploy-multi.sh remove <instance>       # Remove instance
+
+# Examples
+./deploy-multi.sh status                  # All instances
+./deploy-multi.sh status prod-db1         # Specific instance
+./deploy-multi.sh restart prod-db2        # Restart specific
+```
+
+### Directory Structure
+
+```
+/etc/oracledb_exporter/
+├── instances.conf                 # Instance registry
+├── custom-metrics-template.toml   # Template for new instances
+├── prod-db1/
+│   ├── connection.conf            # Connection details
+│   └── custom-metrics.toml        # Instance-specific metrics
+├── prod-db2/
+│   ├── connection.conf
+│   └── custom-metrics.toml
+└── test-db1/
+    ├── connection.conf
+    └── custom-metrics.toml
+```
+
+### Port Assignment
+
+- **Base port**: 9161 (configurable with BASE_PORT environment variable)
+- **Auto-increment**: prod-db1=9161, prod-db2=9162, test-db1=9163, etc.
+- **Custom ports**: Use `--exporter-port` option during add
+
+---
+
+## 📊 Single Instance Deployment
 
 ### 1. Database User Setup
 

@@ -1,0 +1,34 @@
+[Unit]
+Description=Prometheus Oracle DB Exporter for %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=sql_exporter
+Group=sql_exporter
+Type=simple
+Restart=on-failure
+RestartSec=5
+
+# Instance-specific configuration directory
+EnvironmentFile=/etc/oracledb_exporter/%i/connection.conf
+
+ExecStart=/usr/local/bin/oracledb_exporter \
+  --web.listen-address=":${EXPORTER_PORT}" \
+  --custom.metrics="/etc/oracledb_exporter/%i/custom-metrics.toml" \
+  --default.metrics=true \
+  --log.level=info
+
+# Resource limits
+MemoryLimit=256M
+CPUQuota=50%
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/tmp
+
+[Install]
+WantedBy=multi-user.target

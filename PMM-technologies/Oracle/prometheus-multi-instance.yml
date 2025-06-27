@@ -1,0 +1,237 @@
+# Prometheus Configuration for Multi-Instance Oracle Monitoring
+# This file provides examples for scraping multiple Oracle exporters
+# running on the same monitoring server
+
+# Basic multi-instance configuration
+scrape_configs:
+  # Oracle Production Databases
+  - job_name: 'oracle_production'
+    static_configs:
+      - targets: 
+          - 'monitoring-server:9161'  # prod-db1
+          - 'monitoring-server:9162'  # prod-db2
+          - 'monitoring-server:9163'  # prod-db3
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    metrics_path: /metrics
+    
+    # Add labels to identify environment
+    relabel_configs:
+      - target_label: environment
+        replacement: 'production'
+    
+    # Metric relabeling for Oracle-specific metrics
+    metric_relabel_configs:
+      # Add database type label
+      - source_labels: [__name__]
+        regex: 'oracledb_.*'
+        target_label: db_type
+        replacement: 'oracle'
+      
+      # Normalize metric names
+      - source_labels: [__name__]
+        regex: 'oracledb_(.+)'
+        target_label: __name__
+        replacement: 'oracle_${1}'
+
+  # Oracle Development/Test Databases
+  - job_name: 'oracle_development'
+    static_configs:
+      - targets:
+          - 'monitoring-server:9164'  # dev-db1
+          - 'monitoring-server:9165'  # test-db1
+    scrape_interval: 60s
+    scrape_timeout: 15s
+    metrics_path: /metrics
+    
+    relabel_configs:
+      - target_label: environment
+        replacement: 'development'
+    
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'oracledb_.*'
+        target_label: db_type
+        replacement: 'oracle'
+      - source_labels: [__name__]
+        regex: 'oracledb_(.+)'
+        target_label: __name__
+        replacement: 'oracle_${1}'
+
+# Advanced configuration with instance-specific labels
+  - job_name: 'oracle_instances'
+    static_configs:
+      # Production Instance 1
+      - targets: ['monitoring-server:9161']
+        labels:
+          instance_name: 'prod-db1'
+          oracle_version: '19c'
+          environment: 'production'
+          datacenter: 'dc1'
+          
+      # Production Instance 2  
+      - targets: ['monitoring-server:9162']
+        labels:
+          instance_name: 'prod-db2'
+          oracle_version: '19c'
+          environment: 'production'
+          datacenter: 'dc2'
+          
+      # Test Instance
+      - targets: ['monitoring-server:9163']
+        labels:
+          instance_name: 'test-db1'
+          oracle_version: '21c'
+          environment: 'test'
+          datacenter: 'dc1'
+    
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+# High-frequency monitoring for critical instances
+  - job_name: 'oracle_critical_high_freq'
+    static_configs:
+      - targets: ['monitoring-server:9161', 'monitoring-server:9162']
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    
+    # Only collect specific high-priority metrics
+    params:
+      collect[]:
+        - oracle_instance_detailed
+        - oracle_sessions_detailed
+        - oracle_dataguard_status
+    
+    relabel_configs:
+      - target_label: priority
+        replacement: 'critical'
+
+# Configuration for Oracle RAC clusters
+  - job_name: 'oracle_rac_cluster1'
+    static_configs:
+      - targets:
+          - 'monitoring-server:9170'  # rac1-node1
+          - 'monitoring-server:9171'  # rac1-node2
+          - 'monitoring-server:9172'  # rac1-node3
+    scrape_interval: 30s
+    
+    relabel_configs:
+      - target_label: cluster_name
+        replacement: 'rac-cluster-1'
+      - target_label: db_type
+        replacement: 'oracle_rac'
+
+# File-based service discovery configuration
+# Uncomment to use file-based discovery instead of static configs
+#  - job_name: 'oracle_file_discovery'
+#    file_sd_configs:
+#      - files:
+#          - '/etc/prometheus/oracle_targets.json'
+#        refresh_interval: 30s
+#    
+#    relabel_configs:
+#      - source_labels: [__meta_filepath]
+#        target_label: config_source
+#        replacement: 'file_discovery'
+
+# Example oracle_targets.json content:
+# [
+#   {
+#     "targets": ["monitoring-server:9161"],
+#     "labels": {
+#       "instance_name": "prod-db1",
+#       "environment": "production",
+#       "oracle_version": "19c"
+#     }
+#   },
+#   {
+#     "targets": ["monitoring-server:9162"],
+#     "labels": {
+#       "instance_name": "prod-db2", 
+#       "environment": "production",
+#       "oracle_version": "19c"
+#     }
+#   }
+# ]
+
+# Recording rules for multi-instance monitoring
+rule_files:
+  - "oracle_multi_instance.rules.yml"
+
+# Example recording rules (create separate file: oracle_multi_instance.rules.yml)
+# groups:
+#   - name: oracle_multi_instance.rules
+#     interval: 60s
+#     rules:
+#       # Calculate overall database health per instance
+#       - record: oracle:instance_health_score
+#         expr: |
+#           (
+#             oracle_instance_detailed_up * 40 +
+#             (100 - oracle_cdb_tablespace_usage_used_percent) / 100 * 30 +
+#             (oracle_dataguard_status_lag_seconds < 300) * 20 +
+#             (oracle_sessions_detailed_active / oracle_sessions_detailed_limit < 0.8) * 10
+#           ) / 100
+#       
+#       # Aggregate metrics across all instances by environment
+#       - record: oracle:total_instances_by_environment
+#         expr: count by (environment) (oracle_instance_detailed_up)
+#       
+#       - record: oracle:available_instances_by_environment
+#         expr: sum by (environment) (oracle_instance_detailed_up)
+#       
+#       # Calculate environment availability percentage
+#       - record: oracle:environment_availability_percent
+#         expr: |
+#           (
+#             oracle:available_instances_by_environment / 
+#             oracle:total_instances_by_environment
+#           ) * 100
+#       
+#       # Top 5 busiest instances by session count
+#       - record: oracle:top_instances_by_sessions
+#         expr: topk(5, oracle_sessions_detailed_active)
+#       
+#       # Alert if any instance has high tablespace usage
+#       - record: oracle:high_tablespace_usage_instances
+#         expr: count by (instance_name) (oracle_cdb_tablespace_usage_used_percent > 85)
+
+# Alerting rules for multi-instance setup
+# groups:
+#   - name: oracle_multi_instance.alerts
+#     rules:
+#       - alert: OracleInstanceDown
+#         expr: oracle_instance_detailed_up == 0
+#         for: 1m
+#         labels:
+#           severity: critical
+#         annotations:
+#           summary: "Oracle instance {{ $labels.instance_name }} is down"
+#           description: "Oracle instance {{ $labels.instance_name }} in {{ $labels.environment }} has been down for more than 1 minute"
+#       
+#       - alert: OracleEnvironmentDegraded
+#         expr: oracle:environment_availability_percent < 80
+#         for: 5m
+#         labels:
+#           severity: warning
+#         annotations:
+#           summary: "Oracle environment {{ $labels.environment }} is degraded"
+#           description: "Only {{ $value }}% of Oracle instances in {{ $labels.environment }} are available"
+#       
+#       - alert: OracleHighTablespaceUsage
+#         expr: oracle_cdb_tablespace_usage_used_percent > 90
+#         for: 5m
+#         labels:
+#           severity: warning
+#         annotations:
+#           summary: "High tablespace usage on {{ $labels.instance_name }}"
+#           description: "Tablespace {{ $labels.tablespace_name }} on {{ $labels.instance_name }} is {{ $value }}% full"
+#       
+#       - alert: OracleDataGuardLagHigh
+#         expr: oracle_dataguard_status_lag_seconds > 3600
+#         for: 10m
+#         labels:
+#           severity: warning
+#         annotations:
+#           summary: "DataGuard lag high on {{ $labels.instance_name }}"
+#           description: "DataGuard lag on {{ $labels.instance_name }} is {{ $value }} seconds"
