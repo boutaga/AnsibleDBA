@@ -1,0 +1,37 @@
+- name: check if pg_cron is already install
+  stat:
+    path: /u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}/share/extension/pg_cron.control
+  register: pg_cron_installed
+
+- meta: end_play
+  when: pg_cron_installed.stat.exists == true
+
+- name: check if the pg_cron source code exists
+  stat:
+    path: /home/{{ postgres_user }}/pg_cron_{{ pg_cron_version }}_.tar.gz
+  register: source_available
+
+- name: Download the pg_cron source code if it is not already there
+  get_url:
+    url: https://github.com/citusdata/pg_cron/archive/refs/tags/v{{ pg_cron_version }}.tar.gz
+    dest: /home/{{ postgres_user }}/pg_cron_{{ pg_cron_version }}_.tar.gz
+    mode: 0775
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+  when: source_available.stat.exists == false
+
+- name: extract the sources for pg_cron
+  shell: cd /home/{{ postgres_user }}; tar -axf pg_cron_{{ pg_cron_version }}_.tar.gz
+  become: yes
+  become_user: "{{ postgres_user }}"
+
+- name: Compile pg_cron
+  shell: cd /home/{{ postgres_user }}/pg_cron-{{ pg_cron_version }}; export PATH=/u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}/bin:$PATH; make
+  become: yes
+  become_user: "{{ postgres_user }}"
+
+- name: Install pg_cron
+  shell: cd /home/{{ postgres_user }}/pg_cron-{{ pg_cron_version }}; export PATH=/u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}/bin:$PATH; make install
+  become: yes
+  become_user: "{{ postgres_user }}"
+

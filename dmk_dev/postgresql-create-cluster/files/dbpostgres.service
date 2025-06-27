@@ -1,0 +1,30 @@
+#
+# systemd integration for PostgreSQL instances managed by DMK
+# Put this file under /etc/systemd/system/dbpostgres.service
+#     then: systemctl daemon-reload
+#     then: systemctl list-unit-files | grep postgres
+#     then: systemctl enable dbpostgres.service
+#     This is only required for RHEL8:
+#     then: semanage fcontext -a -t bin_t /u01/app/postgres/local/dmk/bin/postgres.sh
+#     then: restorecon -v /u01/app/postgres/local/dmk/bin/postgres.sh
+#
+[Unit]
+Description=The PostgreSQL Instance Service
+After=syslog.target network.target efm-3.0.service
+Requires=network.target local-fs.target
+ 
+[Service]
+LimitMEMLOCK=infinity
+LimitNOFILE=65535
+CPUAccounting=true
+CPUShares=1500
+Type=forking
+RemainAfterExit=yes
+User=root
+Group=root
+ExecStart=/u01/app/postgres/local/dmk/bin/postgres.sh start
+ExecStop=/u01/app/postgres/local/dmk/bin/postgres.sh stop
+
+[Install]
+WantedBy=multi-user.target
+

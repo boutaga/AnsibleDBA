@@ -1,0 +1,72 @@
+- name: Check if DMK is installed
+  include_role:
+    name: postgresql-common
+    tasks_from: is-dmk-installed
+
+- name: End the playbook when DMK is not installed
+  meta: end_play
+  when: dmk_installed.stat.exists == false
+
+- name: Get PostgreSQL Home for a given cluster
+  include_role:
+    name: postgresql-common
+    tasks_from: get-postgresql-home-from-cluster-name
+
+- name: Get PGPORT for this cluster
+  include_role:
+    name: postgresql-common
+    tasks_from: get-port-from-cluster-name
+
+- name: Get PGDATA for this cluster
+  include_role:
+    name: postgresql-common
+    tasks_from: get-pgdata-from-cluster-name
+
+- name: Check that pg_ctl actually exists for the new cluster
+  file:
+    path: /u01/app/{{ postgres_user }}/product/{{dmk_postgresql_version}}/bin/pg_ctl
+    state: file
+
+- name: Stop the current cluster
+  systemd:
+    state: stopped
+    name: "{{ cluster_name }}.service"  
+
+- name: fix exec start in systemd service file
+  lineinfile:
+    path: /etc/systemd/system/{{ cluster_name}}.service
+    regexp: "^ExecStart"
+    line: 'ExecStart=/u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}/bin/postgres -D /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }}'
+    state: present
+
+- name: fix exec reload in systemd service file
+  lineinfile:
+    path: /etc/systemd/system/{{ cluster_name}}.service
+    regexp: "^ExecReload"
+    line: 'ExecReload=/u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}/bin/pg_ctl -D /u02/pgdata/{{ postgresql_major_version }}/{{ cluster_name }} reload'
+    state: present
+
+- name: update pgtab
+  lineinfile:
+    path: /etc/pgtab
+    regexp: "^{{ cluster_name }}"
+    line: '{{ cluster_name }}:/u01/app/{{ postgres_user }}/product/{{dmk_postgresql_version}}:/u02/pgdata/{{ postgresql_major_version }}/{{cluster_name}}:{{ pgport.stdout }}:Y'
+    state: present
+
+- name: force systemd to reread configs
+  systemd:
+    daemon_reload: yes
+
+- name: Enable the systemd postgres service
+  systemd:
+    name: "{{ cluster_name }}.service"
+    enabled: yes
+
+- name: Make sure the service is running
+  systemd:
+    state: started
+    name: "{{ cluster_name }}.service"
+
+
+
+

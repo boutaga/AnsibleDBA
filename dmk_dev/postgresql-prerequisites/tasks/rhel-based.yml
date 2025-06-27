@@ -1,0 +1,42 @@
+- name: Install all dependencies for PostgreSQL on Red Hat, Rocky Linux, Alma Linux 8
+  when: ansible_facts['distribution_major_version'] == "8" 
+  yum:
+    name:
+      - gcc
+      - openldap-devel
+      - python3-devel
+      - readline-devel
+      - redhat-lsb
+      - bison
+      - flex
+      - perl-ExtUtils-Embed
+      - zlib-devel
+      - openssl-devel
+      - pam-devel
+      - libxml2-devel
+      - libxslt-devel
+      - openssh-clients
+      - bzip2
+      - net-tools
+      - wget
+      - unzip
+      - sysstat
+      - lz4-devel
+      - xorg-x11-xauth
+      - systemd-devel
+      - bash-completion
+      - llvm
+      - llvm-devel
+      - clang
+      - policycoreutils-python-utils
+      - epel-release
+      - bzip2-devel
+      - libzstd-devel
+      - uuid-devel
+      - krb5-devel
+    state: present
+
+- name: Update the whole system to the latest packages
+  yum:
+    name: '*'
+    state: latest

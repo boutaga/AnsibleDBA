@@ -11,7 +11,8 @@
       "Bash(mkdir:*)",
       "Bash(curl:*)",
       "Bash(tar:*)",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(cp:*)"
     ],
     "deny": []
   }

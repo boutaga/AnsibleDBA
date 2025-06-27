@@ -1,0 +1,12 @@
+- name: Install packages for PostGIS on Debian
+  apt:
+    pkg:
+      - libxml2-dev
+      - libgdal-dev
+      - libproj-dev
+      - libjson-c-dev
+      - xsltproc
+      - docbook-xsl
+      - docbook-mathml
+      - libprotobuf-c-dev
+      - protobuf-c-compiler

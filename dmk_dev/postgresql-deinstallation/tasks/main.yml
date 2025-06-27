@@ -1,0 +1,20 @@
+# This step will fail if there is still a reference
+# to that PostgreSQL version in /etc/pgtab
+- name: Check if the PostgreSQL version is still used by a cluster
+  include_role:
+    name: postgresql-common
+    tasks_from: is-postgresql-version-still-used
+
+- name: Remove this PostgreSQL version from the system
+  file:
+    path: /u01/app/postgres/product/{{ dmk_postgresql_version }}
+    state: absent
+
+- name: Remove the dummy entry for this PostgreSQL version from /etc/pgtab
+  lineinfile:
+    path: /etc/pgtab
+    regexp: "{{ dmk_postgresql_version }}"
+    state: absent
+
+
+

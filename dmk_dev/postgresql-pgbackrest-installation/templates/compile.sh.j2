@@ -1,0 +1,11 @@
+PGHOME=/u01/app/postgres/product/{{ dmk_postgresql_version }}
+LD_LIBRARY_PATH=${PGHOME}/lib
+PATH=$PATH:${PGHOME}/bin
+export PGHOME LD_LIBRARY_PATH PATH
+echo $LD_LIBRARY_PATH
+
+./configure --prefix=/u01/app/{{ postgres_user }}/product/pgbackrest-{{ pgbackrestversion }} \
+            --with-configdir=/u01/app/{{ postgres_user }}/local/dmk/etc/
+make
+make install
+

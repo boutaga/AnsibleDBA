@@ -1,0 +1,61 @@
+- name: check if PostGIS is already install
+  stat:
+    path: /u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}/share/extension/postgis.control
+  register: postgis_installed
+
+- meta: end_play
+  when: postgis_installed.stat.exists == true
+
+- name: Install all dependencies on Red Hat based systems
+  when: ansible_facts['distribution'] == 'CentOS' or
+        ansible_facts['distribution'] == 'RedHat' or
+        ansible_facts['distribution'] == 'Rocky' or
+        ansible_facts['distribution'] == 'AlmaLinux'
+  include_tasks:
+    file: rhel-based.yml
+
+- name: Install all dependencies on Debian based systems
+  when: ansible_facts['distribution'] == 'Debian'
+  include_tasks:
+    file: debian-based.yml
+
+- name: Install all dependencies on SUSE based systems
+  when: ansible_facts['distribution'] == 'SLES'
+  include_tasks:
+    file: suse-based.yml
+
+- name: check if the PostGIS source code exists
+  stat:
+    path: /home/{{ postgres_user }}/postgis_{{ postgis_version }}.tar.gz
+  register: source_available
+
+- name: Download the PostGIS source code if it is not already there
+  get_url:
+    url: https://download.osgeo.org/postgis/source/postgis-{{ postgis_version }}.tar.gz
+    dest: /home/{{ postgres_user }}/postgis_{{ postgis_version }}.tar.gz
+    mode: 0775
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+  when: source_available.stat.exists == false
+
+- name: extract the sources for PostGIS
+  shell: cd /home/{{ postgres_user }}; tar -axf postgis_{{ postgis_version }}.tar.gz
+  become: yes
+  become_user: "{{ postgres_user }}"
+
+- name: Configure the PostGIS source code
+  shell: cd /home/{{ postgres_user }}/postgis-{{ postgis_version }}; export PATH=/u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}/bin:$PATH; ./configure --prefix /u01/app/{{ postgres_user }}/product/postgis-{{ postgis_version }} --with-pgconfig=/u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}/bin/pg_config
+  become: yes
+  become_user: "{{ postgres_user }}"
+
+- name: Compile the PostGIS source code
+  shell: cd /home/{{ postgres_user }}/postgis-{{ postgis_version }}; export PATH=/u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}/bin:$PATH; make
+  become: yes
+  become_user: "{{ postgres_user }}"
+
+- name: Install PostGIS
+  shell: cd /home/{{ postgres_user }}/postgis-{{ postgis_version }}; export PATH=/u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}/bin:$PATH; make install
+  become: yes
+  become_user: "{{ postgres_user }}"
+
+

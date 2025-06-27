@@ -1,0 +1,99 @@
+- name: Switch the tuning profile on red hat systems to a red hat default
+  when: ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8"
+  shell: /sbin/tuned-adm profile throughput-performance
+  become: yes
+  become_user: root
+
+- name: Remove the dbi tuning profile on red hat systems
+  when: ansible_facts['distribution'] == 'CentOS' and ansible_facts['distribution_major_version'] == "8" or
+        ansible_facts['distribution'] == 'RedHat' and ansible_facts['distribution_major_version'] == "8"
+  file:
+    path: /etc/tuned/dbi-postgres
+    state: absent
+
+- name: Remove the /u01/app directory
+  file:
+    path: /u01/app/
+    state: absent
+
+- name: Remove the /u01/app directory
+  file:
+    path: /u02/pgdata
+    state: absent
+
+- name: Remove systemd serice file
+  file:
+    path: /etc/systemd/system/dbpostgres.service
+    state: absent
+  become: yes
+  become_user: root
+
+- name: force systemd to reread configs
+  systemd:
+    daemon_reload: yes
+
+- name: Remove .bash_profile
+  file:
+    path: /home/{{ postgres_user }}/.bash_profile
+    state: absent
+
+- name: Remove .DMK_HOME
+  file:
+    path: /home/{{ postgres_user }}/.DMK_HOME
+    state: absent
+
+
+- name: Remove vm.swappiness on Debian and SLES
+  when: ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == "10" or
+        ansible_facts['distribution'] == 'SLES' and ansible_facts['distribution_major_version'] == "15"
+  lineinfile:
+    path: /etc/sysctl.conf
+    regexp: '^vm.swappiness'
+    line: 'vm.swappiness=1'
+    state: absent
+
+- name: Remove vm.overcommit_memory on Debian and SLES
+  when: ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == "10" or
+        ansible_facts['distribution'] == 'SLES' and ansible_facts['distribution_major_version'] == "15"
+  lineinfile:
+    path: /etc/sysctl.conf
+    regexp: '^vm.overcommit_memory'
+    line: 'vm.overcommit_memory=2'
+    state: absent
+
+- name: Remove vm.overcommit_ratio on Debian and SLES
+  when: ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == "10" or
+        ansible_facts['distribution'] == 'SLES' and ansible_facts['distribution_major_version'] == "15"
+  lineinfile:
+    path: /etc/sysctl.conf
+    regexp: '^vm.overcommit_ratio'
+    line: 'vm.overcommit_ratio=75'
+    state: absent
+
+
+- name: Remove vm.dirty_ratio on Debian and SLES
+  when: ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == "10" or
+        ansible_facts['distribution'] == 'SLES' and ansible_facts['distribution_major_version'] == "15"
+  lineinfile:
+    path: /etc/sysctl.conf
+    regexp: '^vm.dirty_ratio'
+    line: 'vm.dirty_ratio=2'
+    state: absent
+
+- name: Remove vm.dirty_background_ratio on Debian
+  when: ansible_facts['distribution'] == 'Debian' and ansible_facts['distribution_major_version'] == "10" or
+        ansible_facts['distribution'] == 'SLES' and ansible_facts['distribution_major_version'] == "15"
+  lineinfile:
+    path: /etc/sysctl.conf
+    regexp: '^vm.dirty_background_ratio'
+    line: 'vm.dirty_background_ratio=1'
+    state: absent
+
+- name: Unconditionally reboot the machines
+  reboot:
+
+
+
+
+

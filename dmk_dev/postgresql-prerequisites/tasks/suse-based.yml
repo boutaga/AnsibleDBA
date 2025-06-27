@@ -1,0 +1,48 @@
+- name: Install packages for PostgreSQL on SLES 15
+  when: ansible_facts['distribution_major_version'] == "15" 
+  zypper:
+    name:
+    - wget
+    - gcc
+    - gcc-c++
+    - readline-devel
+    - zlib-devel
+    - libopenssl-devel
+    - pam-devel
+    - libxml2-devel
+    - libxslt-devel
+    - openldap2-devel
+    - python3-devel
+    - sysstat
+    - make
+    - systemd-devel
+    - sudo
+    - vim
+    - bzip2
+    - llvm7-devel
+    - llvm7
+    - clang7
+    - libicu-devel
+    - iputils
+    - liblz4-devel
+    - tuned
+    - python3-rpm
+    - unzip
+    - libbz2-devel
+    - libzstd-devel
+    - uuid-devel
+    - krb5-devel
+
+- name: Update the SLES system to the latest version
+  zypper:
+    name: "*"
+    state: latest
+
+- name: On SLES bash_profile does not exist by default, so create it
+  file:
+    path: /home/{{ postgres_user }}/.bash_profile
+    state: touch
+    mode: u=rw,g=r,o=r
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+

@@ -1,0 +1,66 @@
+- name: Check if PostgreSQL is already installed
+  stat:
+    path: /u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}/bin/postgres
+  register: postrgresql_is_installed
+
+- name: End the playbook when PostgreSQL is not installed
+  meta: end_play
+  when: postrgresql_is_installed.stat.exists == false
+
+- name: check if DMK is installed
+  stat:
+    path: /home/{{ postgres_user }}/.DMK_HOME
+  register: dmk_installed
+
+- name: End the playbook if DMK is not installed
+  meta: end_play
+  when: dmk_installed.stat.exists == false
+
+- name: check if pgBackRest is already installed
+  stat:
+    path: /u01/app/{{ postgres_user }}/product/pgbackrest-{{ pgbackrestversion }}/bin/pgbackrest
+  register: pgbackrest_installed
+
+- name: End the playbook if this version of pgBackRest is already installed
+  meta: end_play
+  when: pgbackrest_installed.stat.exists == true
+
+- name: check if the pgBackRest source code exists
+  stat:
+    path: /home/{{ postgres_user }}/pgbackrest_{{ pgbackrestversion }}_source.tar.gz
+  register: source_available
+
+- name: Download the pgBackRest source code if it is not already there
+  get_url:
+    url: https://github.com/pgbackrest/pgbackrest/archive/refs/tags/release/{{ pgbackrestversion }}.tar.gz
+    dest: /home/{{ postgres_user }}/pgbackrest_{{ pgbackrestversion }}_source.tar.gz
+    mode: 0775
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+  when: source_available.stat.exists == false
+
+- name: Extract the pgBackRest source code
+  shell: cd /home/{{ postgres_user }}; tar -axf pgbackrest_{{ pgbackrestversion }}_source.tar.gz
+  become: yes
+  become_user: "{{ postgres_user }}"
+
+- template:
+    src: compile.sh.j2
+    dest: /home/{{ postgres_user }}/pgbackrest-release-{{ pgbackrestversion }}/src/compile.sh
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+    mode: 0700
+
+- name: Install pgBackRest from source code
+  shell: cd /home/{{ postgres_user }}/pgbackrest-release-{{ pgbackrestversion }}/src/; ./compile.sh
+  become: yes
+  become_user: "{{ postgres_user }}"
+
+- name: Link the current pgBackRest version
+  ansible.builtin.file:
+    src: /u01/app/{{ postgres_user }}/product/pgbackrest-{{ pgbackrestversion }}
+    dest: /u01/app/{{ postgres_user }}/product/pgbackrest-current
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+    state: link
+

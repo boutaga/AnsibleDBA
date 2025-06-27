@@ -1,0 +1,5 @@
+- name: Get the PORT
+  shell: "cat /etc/pgtab | grep {{ cluster_name }} | awk -F ':' '{print $4}'"
+  register: pgport
+  failed_when: pgport.stdout == ''
+ 

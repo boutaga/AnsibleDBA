@@ -1,0 +1,86 @@
+- name: Install packages for PostgreSQL on Debian 10
+  when: ansible_facts['distribution_major_version'] == "10" 
+  apt:
+    pkg:
+      - libldap2-dev
+      - libpython-dev
+      - libreadline-dev
+      - libssl-dev
+      - bison
+      - flex
+      - libghc-zlib-dev
+      - libcrypto++-dev
+      - libxml2-dev
+      - libxslt1-dev
+      - bzip2
+      - wget
+      - screen
+      - libpam0g-dev
+      - libperl-dev
+      - make
+      - unzip
+      - libsystemd-dev
+      - llvm-dev
+      - llvm
+      - clang
+      - liblz4-dev 
+      - libbz2-dev
+      - chrony
+      - libzstd-dev
+      - libossp-uuid-dev
+      - libkrb5-dev
+
+- name: Install all packages for PostgreSQL on Debian 11
+  when: ansible_facts['distribution_major_version'] == "11"
+  apt:
+    pkg:
+      - libldap2-dev 
+      - libpython3-dev 
+      - libreadline-dev 
+      - libssl-dev 
+      - bison 
+      - flex 
+      - libghc-zlib-dev 
+      - libcrypto++-dev 
+      - libxml2-dev 
+      - libxslt1-dev 
+      - bzip2 
+      - wget 
+      - screen 
+      - libpam0g-dev 
+      - libperl-dev 
+      - make 
+      - unzip 
+      - libpam0g-dev 
+      - python3 
+      - libsystemd-dev 
+      - sudo 
+      - llvm 
+      - llvm-dev 
+      - clang 
+      - pkg-config 
+      - gcc 
+      - g++ 
+      - liblz4-dev 
+      - pkg-config 
+      - python3-distutils
+      - tuned
+      - libbz2-dev
+      - chrony
+      - python3-pip
+      - libzstd-dev
+      - libossp-uuid-dev
+      - libkrb5-dev
+
+- name: Update the Debian system to the latest version
+  apt:
+    upgrade: dist
+
+- name: On Debian .bash_profile does not exist by default, so create it
+  file:
+    path: /home/{{ postgres_user }}/.bash_profile
+    state: touch
+    mode: u=rw,g=r,o=r
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+

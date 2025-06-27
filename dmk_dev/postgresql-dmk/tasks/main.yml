@@ -1,0 +1,50 @@
+- name: Check and fix /etc/pgtab
+  file:
+    path: /etc/pgtab
+    state: touch
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+    mode: 0600
+
+- name: check if DMK for PostgreSQL source code exists
+  stat:
+    path: /u01/app/{{ postgres_user }}/local/PostgreSQL-DMK-{{ dmk_version }}.zip
+  register: dmk_source_available
+
+- name: check if DMK for PostgreSQL is extracted
+  stat:
+    path: /u01/app/{{ postgres_user }}/local/dmk/bin/dmk.bash
+  register: dmk_extracted
+
+- name: Copy DMK source distribution
+  copy:
+    src: PostgreSQL-DMK-{{ dmk_version }}.zip
+    dest: /u01/app/{{ postgres_user }}/local/PostgreSQL-DMK-{{ dmk_version }}.zip
+    owner: "{{ postgres_user }}"
+    group: "{{ postgres_group }}"
+    mode: 0700
+  when: dmk_source_available.stat.exists == false
+
+- name: extract DMK
+  shell: cd /u01/app/{{ postgres_user }}/local; unzip PostgreSQL-DMK-{{ dmk_version }}.zip
+  become: yes
+  become_user: "{{ postgres_user }}"
+  when: dmk_extracted.stat.exists == false
+
+- name: check if DMK is installed
+  stat:
+    path: /home/{{ postgres_user }}/.DMK_HOME
+  register: dmk_installed
+
+- lineinfile:
+    path: /etc/pgtab
+    line: 'pg{{ postgresql_version }}:/u01/app/{{ postgres_user }}/product/{{ dmk_postgresql_version }}:dummy:9999:D'
+    create: no
+  when: dmk_installed.stat.exists == false
+
+- name: Execute DMK for the first time
+  shell: /u01/app/{{ postgres_user }}/local/dmk/bin/dmk.bash; cat /u01/app/{{ postgres_user }}/local/dmk/templates/profile/dmk.postgres.profile >> /home/{{ postgres_user }}/.bash_profile
+  become: yes
+  become_user: "{{ postgres_user }}"
+  when: dmk_installed.stat.exists == false
+
