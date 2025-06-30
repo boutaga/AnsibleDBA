@@ -54,7 +54,7 @@ storage:
 ```mermaid
 graph TD
     A[Prometheus Scrape Interval] -->|Every 60s| B[postgres_exporter]
-    B -->|Executes SQL| C[monitor.pgbackrest_info\(\)]
+    B -->|Executes SQL| C[monitor.pgbackrest_info function]
     C -->|Reads from| D[monitor.pgbackrest_info_raw table]
     D -->|Returns| E[Current pgBackRest Status]
     E -->|Metrics| F[Prometheus Storage]
