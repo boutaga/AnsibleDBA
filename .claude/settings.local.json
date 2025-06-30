@@ -12,7 +12,8 @@
       "Bash(curl:*)",
       "Bash(tar:*)",
       "Bash(git fetch:*)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "WebFetch(domain:pgbackrest.org)"
     ],
     "deny": []
   }

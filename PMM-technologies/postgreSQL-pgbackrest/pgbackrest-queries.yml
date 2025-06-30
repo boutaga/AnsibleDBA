@@ -1,0 +1,176 @@
+# pgBackRest monitoring queries for postgres_exporter
+# These queries extract backup and archive information from pgBackRest
+
+pgbackrest_last_backup:
+  query: |
+    SELECT
+      stanza,
+      backup_type,
+      EXTRACT(EPOCH FROM (now() - backup_timestamp))::int as seconds_since_backup,
+      backup_size,
+      CASE backup_type
+        WHEN 'full' THEN 1
+        WHEN 'diff' THEN 2
+        WHEN 'incr' THEN 3
+        ELSE 0
+      END as backup_type_num
+    FROM monitor.pgbackrest_last_backup
+  metrics:
+    - stanza:
+        usage: "LABEL"
+        description: "pgBackRest stanza name"
+    - backup_type:
+        usage: "LABEL"
+        description: "Type of backup (full, diff, incr)"
+    - seconds_since_backup:
+        usage: "GAUGE"
+        description: "Seconds since last successful backup"
+    - backup_size:
+        usage: "GAUGE"
+        description: "Size of last backup in bytes"
+    - backup_type_num:
+        usage: "GAUGE"
+        description: "Numeric representation of backup type"
+
+pgbackrest_backup_status:
+  query: |
+    SELECT
+      stanza,
+      COUNT(*) FILTER (WHERE backup_error IS NULL) as successful_backups,
+      COUNT(*) FILTER (WHERE backup_error IS NOT NULL) as failed_backups,
+      MAX(EXTRACT(EPOCH FROM backup_duration))::int as max_backup_duration_seconds,
+      AVG(EXTRACT(EPOCH FROM backup_duration))::int as avg_backup_duration_seconds,
+      SUM(backup_size) as total_backup_size,
+      MAX(backup_db_size) as current_db_size
+    FROM monitor.pgbackrest_info()
+    WHERE backup_timestamp > now() - interval '7 days'
+    GROUP BY stanza
+  metrics:
+    - stanza:
+        usage: "LABEL"
+        description: "pgBackRest stanza name"
+    - successful_backups:
+        usage: "GAUGE"
+        description: "Number of successful backups in last 7 days"
+    - failed_backups:
+        usage: "GAUGE"
+        description: "Number of failed backups in last 7 days"
+    - max_backup_duration_seconds:
+        usage: "GAUGE"
+        description: "Maximum backup duration in seconds"
+    - avg_backup_duration_seconds:
+        usage: "GAUGE"
+        description: "Average backup duration in seconds"
+    - total_backup_size:
+        usage: "GAUGE"
+        description: "Total size of all backups in bytes"
+    - current_db_size:
+        usage: "GAUGE"
+        description: "Current database size in bytes"
+
+pgbackrest_archive_status:
+  query: |
+    SELECT
+      stanza,
+      archive_min,
+      archive_max,
+      pg_wal_lsn_diff(archive_max::pg_lsn, archive_min::pg_lsn) as archive_size_bytes,
+      CASE 
+        WHEN repo_status = 'ok' THEN 1
+        ELSE 0
+      END as repo_ok
+    FROM monitor.pgbackrest_info()
+    WHERE archive_min IS NOT NULL
+  metrics:
+    - stanza:
+        usage: "LABEL"
+        description: "pgBackRest stanza name"
+    - archive_min:
+        usage: "LABEL"
+        description: "Minimum WAL segment in archive"
+    - archive_max:
+        usage: "LABEL"
+        description: "Maximum WAL segment in archive"
+    - archive_size_bytes:
+        usage: "GAUGE"
+        description: "Estimated archive size in bytes"
+    - repo_ok:
+        usage: "GAUGE"
+        description: "Repository status (1=ok, 0=error)"
+
+pgbackrest_retention_status:
+  query: |
+    WITH backup_counts AS (
+      SELECT
+        stanza,
+        COUNT(*) FILTER (WHERE backup_type = 'full') as full_backup_count,
+        COUNT(*) FILTER (WHERE backup_type = 'diff') as diff_backup_count,
+        COUNT(*) FILTER (WHERE backup_type = 'incr') as incr_backup_count,
+        MIN(backup_timestamp) FILTER (WHERE backup_type = 'full') as oldest_full_backup,
+        MAX(backup_timestamp) FILTER (WHERE backup_type = 'full') as newest_full_backup
+      FROM monitor.pgbackrest_info()
+      WHERE backup_error IS NULL
+      GROUP BY stanza
+    )
+    SELECT
+      stanza,
+      full_backup_count,
+      diff_backup_count,
+      incr_backup_count,
+      EXTRACT(EPOCH FROM (now() - oldest_full_backup))::int as oldest_full_backup_age_seconds,
+      EXTRACT(EPOCH FROM (now() - newest_full_backup))::int as newest_full_backup_age_seconds
+    FROM backup_counts
+  metrics:
+    - stanza:
+        usage: "LABEL"
+        description: "pgBackRest stanza name"
+    - full_backup_count:
+        usage: "GAUGE"
+        description: "Number of full backups retained"
+    - diff_backup_count:
+        usage: "GAUGE"
+        description: "Number of differential backups retained"
+    - incr_backup_count:
+        usage: "GAUGE"
+        description: "Number of incremental backups retained"
+    - oldest_full_backup_age_seconds:
+        usage: "GAUGE"
+        description: "Age of oldest full backup in seconds"
+    - newest_full_backup_age_seconds:
+        usage: "GAUGE"
+        description: "Age of newest full backup in seconds"
+
+pgbackrest_stanza_info:
+  query: |
+    WITH stanza_info AS (
+      SELECT DISTINCT
+        stanza,
+        repo_status,
+        MAX(backup_timestamp) as last_backup,
+        MIN(backup_timestamp) as first_backup
+      FROM monitor.pgbackrest_info()
+      GROUP BY stanza, repo_status
+    )
+    SELECT
+      stanza,
+      CASE 
+        WHEN repo_status = 'ok' THEN 1
+        WHEN repo_status = 'mixed' THEN 2
+        ELSE 3
+      END as repo_status_code,
+      EXTRACT(EPOCH FROM (now() - last_backup))::int as seconds_since_any_backup,
+      EXTRACT(EPOCH FROM (last_backup - first_backup))::int as backup_history_seconds
+    FROM stanza_info
+  metrics:
+    - stanza:
+        usage: "LABEL"
+        description: "pgBackRest stanza name"
+    - repo_status_code:
+        usage: "GAUGE"
+        description: "Repository status code (1=ok, 2=mixed, 3=error)"
+    - seconds_since_any_backup:
+        usage: "GAUGE"
+        description: "Seconds since any type of backup"
+    - backup_history_seconds:
+        usage: "GAUGE"
+        description: "Span of backup history in seconds"
