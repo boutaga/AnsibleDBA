@@ -855,3 +855,290 @@ sudo ./deploy-multi.sh restart prod-db1
 ```
 
 This KMS integration would significantly enhance the security posture of the Oracle monitoring solution while maintaining the ease of use and management capabilities of the multi-instance deployment approach.
+
+---
+
+## 🔐 KMS Credential Management Architecture
+
+### How KMS Integration Works
+
+The Oracle exporter uses a **credential caching strategy** to optimize performance and minimize KMS API calls:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Oracle Exporter Process                    │
+│                                                               │
+│  ┌─────────────┐    ┌──────────────┐    ┌───────────────┐  │
+│  │   Startup   │───>│ KMS Client   │───>│ Memory Cache  │  │
+│  │   Init      │    │              │    │               │  │
+│  └─────────────┘    └──────────────┘    └───────────────┘  │
+│         │                   │                     │          │
+│         v                   v                     v          │
+│  ┌─────────────┐    ┌──────────────┐    ┌───────────────┐  │
+│  │  Metrics    │    │   Refresh    │    │   Database    │  │
+│  │ Collection  │<───│   Thread     │───>│  Connection   │  │
+│  │  (15-30s)   │    │  (1-4 hrs)   │    │     Pool      │  │
+│  └─────────────┘    └──────────────┘    └───────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Credential Retrieval Flow
+
+1. **Initial Authentication (Startup)**
+   - Exporter authenticates to KMS using machine identity
+   - Retrieves Oracle credentials from KMS path
+   - Stores credentials in encrypted memory (never on disk)
+   - Establishes database connection pool
+   - Starts metrics collection
+
+2. **Runtime Behavior**
+   - **NOT per-collection**: Credentials are NOT fetched for each metric collection
+   - **In-memory cache**: Credentials stored encrypted in memory
+   - **Connection pooling**: Maintains persistent Oracle connections
+   - **Periodic refresh**: Background thread refreshes credentials every 1-4 hours
+
+3. **Security Features**
+   - Memory protection using `mlock()` to prevent swapping
+   - Credentials cleared on process termination
+   - Graceful rotation without service interruption
+   - Zero downtime credential updates
+
+### Performance Optimization
+
+**Why we don't fetch credentials for each collection:**
+- Network latency: Each KMS request adds 10-50ms overhead
+- Rate limiting: KMS providers limit API calls
+- Oracle connection overhead: Creating connections is expensive
+- Collection frequency: Metrics collected every 15-30 seconds would overwhelm KMS
+
+**Optimal approach:**
+- Single KMS request at startup
+- Periodic refresh based on TTL/lease
+- Encrypted in-memory credential cache
+- Connection pool reuse for all collections
+
+---
+
+## 🔑 Machine Identity Authentication for KMS
+
+Managing KMS authentication credentials is solved using **machine identity** - similar to Azure Managed Identity but for on-premise servers.
+
+### 1. HashiCorp Vault Authentication Methods
+
+#### **TLS Certificate Authentication (Recommended for On-Premise)**
+```bash
+# Server uses its TLS certificate as identity
+vault auth enable cert
+vault write auth/cert/certs/oracledb-exporters \
+    display_name=oracledb-exporters \
+    policies=oracledb-read \
+    certificate=@ca-cert.pem \
+    allowed_common_names="*.monitoring.company.com"
+
+# Exporter authenticates using server certificate
+export VAULT_CLIENT_CERT=/etc/ssl/certs/monitoring-server.crt
+export VAULT_CLIENT_KEY=/etc/ssl/private/monitoring-server.key
+```
+
+#### **AppRole with Wrapped SecretID**
+```bash
+# Vault agent runs alongside exporter
+cat > /etc/vault/auto-auth.hcl <<EOF
+auto_auth {
+  method {
+    type = "approle"
+    config = {
+      role_id_file_path = "/etc/vault/role-id"
+      remove_secret_id_file_after_reading = false
+    }
+  }
+  
+  sink {
+    type = "file"
+    config = {
+      path = "/var/run/vault/token"
+    }
+  }
+}
+EOF
+```
+
+### 2. AWS Secrets Manager - EC2 Instance Profiles
+
+For servers running on AWS EC2:
+```bash
+# Create IAM role
+aws iam create-role --role-name OracleDBExporterRole \
+  --assume-role-policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Principal": {"Service": "ec2.amazonaws.com"},
+      "Action": "sts:AssumeRole"
+    }]
+  }'
+
+# Attach Secrets Manager policy
+aws iam put-role-policy --role-name OracleDBExporterRole \
+  --policy-name ReadOracleSecrets --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Action": ["secretsmanager:GetSecretValue"],
+      "Resource": "arn:aws:secretsmanager:*:*:secret:oracle/*"
+    }]
+  }'
+
+# No credentials needed - uses EC2 metadata service
+```
+
+### 3. Azure Arc - Managed Identity for On-Premise
+
+**Azure Arc enables managed identity for on-premise servers!**
+
+```bash
+# Install Azure Arc agent on monitoring server
+wget https://aka.ms/azcmagent -O install_linux_azcmagent.sh
+bash install_linux_azcmagent.sh
+
+# Connect server to Azure
+azcmagent connect \
+  --resource-group "monitoring-rg" \
+  --tenant-id "your-tenant-id" \
+  --location "eastus" \
+  --subscription-id "your-subscription-id"
+
+# Enable system-assigned managed identity
+az connectedmachine identity assign \
+  --name "monitoring-server-01" \
+  --resource-group "monitoring-rg"
+
+# Grant access to Key Vault
+az keyvault set-policy \
+  --name "company-keyvault" \
+  --object-id <managed-identity-object-id> \
+  --secret-permissions get list
+```
+
+### 4. SPIFFE/SPIRE - Zero-Trust Workload Identity
+
+Modern approach for any environment:
+```bash
+# Deploy SPIRE agent on monitoring server
+spire-agent run -config /etc/spire/agent.conf
+
+# Register Oracle exporter workload
+spire-server entry create \
+  -spiffeID spiffe://company.com/oracledb-exporter \
+  -parentID spiffe://company.com/host \
+  -selector unix:uid:1001 \
+  -selector unix:path:/usr/local/bin/oracledb_exporter
+
+# Vault accepts SPIFFE identity
+vault auth enable jwt
+vault write auth/jwt/config \
+  jwks_url="https://spire-server.company.com/jwks" \
+  default_role="oracledb-exporter"
+```
+
+### 5. Platform-Specific Solutions
+
+#### **Kubernetes Service Accounts**
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: oracledb-exporter
+  namespace: monitoring
+---
+# Vault trusts K8s service account
+vault auth enable kubernetes
+vault write auth/kubernetes/role/oracledb-exporter \
+    bound_service_account_names=oracledb-exporter \
+    bound_service_account_namespaces=monitoring \
+    policies=oracledb-read
+```
+
+#### **VMware vSphere Guest Identity**
+```bash
+# Use vSphere guest info as identity
+VMWARE_GUEST_INFO=$(vmware-rpctool "info-get guestinfo.vault.role")
+vault login -method=approle role_id=$VMWARE_GUEST_INFO
+```
+
+### Implementation in deploy-multi.sh
+
+Enhanced deployment with automatic identity detection:
+```bash
+# Setup with machine identity
+sudo ./deploy-multi.sh setup \
+  --kms-provider vault \
+  --vault-endpoint https://vault.company.com:8200 \
+  --auth-method auto \  # Auto-detect best method
+  --identity-options '{
+    "cert_path": "/etc/ssl/certs/monitoring.crt",
+    "cert_key": "/etc/ssl/private/monitoring.key",
+    "arc_identity": "system-assigned",
+    "spiffe_socket": "/tmp/spire-agent/public/api.sock"
+  }'
+```
+
+### Systemd Service with Machine Identity
+
+```ini
+[Unit]
+Description=Oracle Database Exporter - %i
+After=network.target vault-agent.service
+
+[Service]
+Type=simple
+User=sql_exporter
+Group=sql_exporter
+
+# Vault Agent provides token automatically
+Environment="VAULT_ADDR=https://vault.company.com:8200"
+Environment="VAULT_TOKEN_FILE=/var/run/vault/token"
+
+# Or use SPIFFE identity
+Environment="SPIFFE_ENDPOINT_SOCKET=/tmp/spire-agent/public/api.sock"
+
+# Or use Azure Arc managed identity
+Environment="AZURE_CLIENT_ID=system-assigned"
+
+ExecStartPre=/usr/local/bin/wait-for-credentials.sh
+ExecStart=/usr/local/bin/oracledb_exporter \
+  --config.file=/etc/oracledb_exporter/%i/config.env \
+  --web.listen-address=:${PORT} \
+  --credential.provider=${CREDENTIAL_PROVIDER}
+
+Restart=on-failure
+RestartSec=10
+```
+
+### Best Practices by Environment
+
+1. **Cloud Workloads**
+   - AWS: EC2 Instance Profiles (automatic)
+   - Azure: Managed Identity or Arc (automatic)
+   - GCP: Service Account + Workload Identity
+
+2. **On-Premise Servers**
+   - **Azure Arc**: Best if using Azure Key Vault - provides true managed identity
+   - **TLS Certificates**: Good for existing PKI infrastructure
+   - **SPIFFE/SPIRE**: Best for modern zero-trust architecture
+   - **Vault AppRole**: Simple but requires initial bootstrap
+
+3. **Kubernetes**
+   - Service Accounts with IRSA/Workload Identity
+   - Vault Kubernetes auth method
+   - SPIFFE/SPIRE for workload attestation
+
+### Security Benefits
+
+- **Zero static credentials**: No KMS passwords to manage
+- **Machine attestation**: Server identity verified by infrastructure
+- **Automatic rotation**: Identity credentials managed by platform
+- **Audit trails**: Complete tracking of which server accessed what
+- **Least privilege**: Fine-grained access control per server/service
+
+The key advantage is that monitoring servers authenticate to KMS using their inherent machine identity, completely eliminating the need to manage KMS authentication credentials separately.
