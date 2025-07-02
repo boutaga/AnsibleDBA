@@ -1,12 +1,4 @@
 ---
-tags:
-  - PMM
-  - exporter
-  - customer-AP
-date: 22-05-2025
----
-
----
 
 ## Installation of the Oracle exporter
 
